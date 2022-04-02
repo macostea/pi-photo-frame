@@ -1,0 +1,7 @@
+{
+    paths: [
+        ""
+    ],
+    // Transition time in seconds
+    transition_time: 15,
+}
