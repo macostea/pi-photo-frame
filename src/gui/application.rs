@@ -41,8 +41,8 @@ impl App {
         self.photo_provider = Rc::new(photo_provider);
 
         let app = Application::builder()
-        .application_id("com.mcostea.photo-frame")
-        .build();
+            .application_id("com.mcostea.photo-frame")
+            .build();
 
         let main_view = self.main_view.clone();
 
