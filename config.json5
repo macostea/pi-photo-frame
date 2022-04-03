@@ -4,4 +4,8 @@
     ],
     // Transition time in seconds
     transition_time: 15,
+    // Use mqtt to start/stop the slideshow
+    mqtt: true,
+    mqtt_topic: "",
+    mqtt_host: "",
 }
