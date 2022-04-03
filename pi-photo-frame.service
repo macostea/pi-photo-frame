@@ -1,0 +1,16 @@
+[Unit]
+Description=Pi Photo Frame
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Environment="DISPLAY=:0"
+Environment="XAUTHORITY=/home/pi/.Xauthority"
+Type=simple
+Restart=always
+RestartSec=1
+User=pi
+ExecStart=/usr/bin/photo-frame
+
+[Install]
+WantedBy=graphical.target
