@@ -6,8 +6,11 @@ use gui::application::{App, Config};
 mod photo;
 
 fn load_config() -> Config {
-    let config_path = Path::new("/etc/pi-photo-frame.json5");
-    json5::from_str(&fs::read_to_string(config_path).unwrap()).unwrap()
+    let mut path = Path::new("config.json5");
+    if !path.exists() {
+        path = Path::new("/etc/pi-photo-frame.json5");
+    }
+    json5::from_str(&fs::read_to_string(path).unwrap()).unwrap()
 }
 
 fn main() {

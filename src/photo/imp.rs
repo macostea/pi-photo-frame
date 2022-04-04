@@ -46,9 +46,16 @@ impl PhotoProvider {
 
             let file = fs::File::open(random_photo_path)?;
             let mut bufreader = std::io::BufReader::new(&file);
-            let exif = exifreader.read_from_container(&mut bufreader).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            let exif = exifreader.read_from_container(&mut bufreader).map_err(|e| io::Error::new(io::ErrorKind::Other, e));
 
-            let orientation = match exif.get_field(Tag::Orientation, In::PRIMARY) {
+            if exif.is_err() {
+                return Ok(Photo {
+                    path: random_photo_path_clone,
+                    orientation: 0,
+                });
+            }
+
+            let orientation = match exif?.get_field(Tag::Orientation, In::PRIMARY) {
                 Some(orientation) => {
                     match orientation.value.get_uint(0) {
                         Some(v @ 1..=8) => v,

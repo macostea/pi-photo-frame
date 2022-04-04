@@ -1,8 +1,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::thread;
 use std::time::Duration;
 
-use gtk::glib::{self, timeout_future_seconds, timeout_future};
+use gtk::glib::{self, timeout_future_seconds, PRIORITY_DEFAULT};
 use gtk::glib::{MainContext, clone};
 use gtk::{prelude::*, CssProvider, StyleContext, Application};
 use gtk::gdk::Display;
@@ -124,31 +125,44 @@ impl App {
                 }
             }));
 
+            let mqtt_host = mqtt_host.clone();
+            let mqtt_topic = mqtt_topic.clone();
+
             if mqtt {
-                main_context.spawn_local(clone!(@strong mqtt_host, @strong mqtt_topic, @weak photo_provider => async move {
+                let (sender, receiver) = MainContext::channel::<bool>(PRIORITY_DEFAULT);
+                thread::spawn(move || {
                     let mqtt_topic_clone = mqtt_topic.clone();
                     let mut connection = App::connect_mqtt(mqtt_host, mqtt_topic);
-    
+
                     for (_, notification) in connection.iter().enumerate() {
-                        timeout_future(Duration::from_millis(500)).await;
                         if let Ok(Incoming(Publish(notification))) = notification {
                             if notification.topic == mqtt_topic_clone {
                                 let payload = String::from_utf8(notification.payload[..].to_vec()).unwrap();
                                 let power = if payload == "1" {"0"} else {"1"};
                                 println!("Received MQTT notification {}", payload);
-                                if payload == "1" {
-                                    photo_provider.borrow_mut().paused = false;
-                                } else {
-                                    photo_provider.borrow_mut().paused = true;
-                                }
                                 let err = run_script::run_script!(format!("echo {} | sudo tee /sys/class/backlight/rpi_backlight/bl_power", power));
                                 if err.is_err() {
                                     println!("Failed to switch lcd display");
                                 }
+
+                                if payload == "1" {
+                                    sender.send(false).unwrap();
+                                } else {
+                                    sender.send(true).unwrap();
+                                }
                             }
                         }
                     }
-                }));
+                });
+
+                receiver.attach(
+                    None,
+                    clone!(@weak photo_provider => @default-return Continue(false),
+                        move |pause| {
+                            photo_provider.borrow_mut().paused = pause;
+                            Continue(true)
+                        })
+                );
             }
         });
     
