@@ -12,6 +12,7 @@ use serde::Deserialize;
 use rumqttc::{MqttOptions, QoS, Client, Connection, Event::Incoming, Packet::Publish};
 
 use crate::photo::PhotoProvider;
+use crate::geocoder::Geocoder;
 
 use super::main_view::MainView;
 
@@ -22,6 +23,8 @@ pub struct Config {
     mqtt: bool,
     mqtt_host: String,
     mqtt_topic: String,
+    reverse_geocode: bool,
+    mapbox_api_key: String,
 }
 
 pub struct App {
@@ -58,6 +61,8 @@ impl App {
         let mqtt = self.config.mqtt.clone();
         let mqtt_host = self.config.mqtt_host.clone();
         let mqtt_topic = self.config.mqtt_topic.clone();
+        let reverse_geocode = self.config.reverse_geocode.clone();
+        let mapbox_api_key = self.config.mapbox_api_key.clone();
     
         app.connect_startup(|_| App::load_css());
         app.connect_activate(move |app| {
@@ -67,6 +72,9 @@ impl App {
             let time_label = main_view.borrow().time_label.clone().unwrap();
             let date_label = main_view.borrow().date_label.clone().unwrap();
             let picture = main_view.borrow().picture.clone().unwrap();
+            let location_label = main_view.borrow().location_label.clone().unwrap();
+            let location_box = main_view.borrow().location_box.clone().unwrap();
+            let mapbox_api_key = mapbox_api_key.clone();
 
             main_context.spawn_local(clone!(@weak time_label, @weak date_label => async move {
                 loop {
@@ -80,7 +88,8 @@ impl App {
                 }
             }));
 
-            main_context.spawn_local(clone!(@weak picture, @weak photo_provider => async move {
+            main_context.spawn_local(clone!(@weak picture, @weak photo_provider, @weak location_box, @weak location_label => async move {
+                let geocoder = Geocoder::new(mapbox_api_key);
                 loop {
                     timeout_future_seconds(timeout).await;
 
@@ -117,6 +126,24 @@ impl App {
                                 _ => pixbuf
                             };
                             picture.set_pixbuf(Some(&new_pixbuf));
+                        }
+
+                        if reverse_geocode {
+                            if let Some(location) = photo.location {
+                                let address = geocoder.reverse_geocode(location.0, location.1).await;
+                                match address {
+                                    Ok(a) => {
+                                        location_box.show();
+                                        location_label.set_text(format!("{}", a).as_str());
+                                    },
+                                    Err(e) => {
+                                        location_box.hide();
+                                        println!("Failed to get reverse geocode response, {}", e);
+                                    }
+                                }
+                            } else {
+                                location_box.hide();
+                            }
                         }
 
                     } else {
@@ -188,6 +215,7 @@ impl App {
     fn connect_mqtt(mqtt_host: String, mqtt_topic: String) -> Connection {
         let mut mqtt_options = MqttOptions::new("pi-photo-frame", mqtt_host, 1883);
         mqtt_options.set_keep_alive(Duration::from_secs(5));
+        mqtt_options.set_clean_session(false);
         
         let (mut client, connection) = Client::new(mqtt_options, 10);
         client.subscribe(mqtt_topic, QoS::AtMostOnce).unwrap();

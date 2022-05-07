@@ -4,6 +4,7 @@ mod gui;
 use gui::application::{App, Config};
 
 mod photo;
+mod geocoder;
 
 fn load_config() -> Config {
     let mut path = Path::new("config.json5");

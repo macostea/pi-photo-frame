@@ -1,12 +1,13 @@
 use std::{fs::{self, ReadDir}, io, path::PathBuf};
 
-use exif::{Tag, In};
+use exif::{Tag, In, Value};
 use rand::prelude::*;
 
 #[derive(Clone, Debug)]
 pub struct Photo {
     pub path: PathBuf,
     pub orientation: u32,
+    pub location: Option<(f32, f32)>,
 }
 
 #[derive(Default)]
@@ -52,10 +53,13 @@ impl PhotoProvider {
                 return Ok(Photo {
                     path: random_photo_path_clone,
                     orientation: 0,
+                    location: None,
                 });
             }
 
-            let orientation = match exif?.get_field(Tag::Orientation, In::PRIMARY) {
+            let exif_obj = exif.unwrap();
+
+            let orientation = match exif_obj.get_field(Tag::Orientation, In::PRIMARY) {
                 Some(orientation) => {
                     match orientation.value.get_uint(0) {
                         Some(v @ 1..=8) => v,
@@ -65,9 +69,46 @@ impl PhotoProvider {
                 None => 1
             };
 
+            let latitude = match exif_obj.get_field(Tag::GPSLatitude, In::PRIMARY) {
+                Some(latitude) => {
+                    match latitude.value {
+                        Value::Rational(ref v) if !v.is_empty() => Some(v),
+                        _ => None
+                    }
+                },
+                None => None
+            };
+
+            let longitude = match exif_obj.get_field(Tag::GPSLongitude, In::PRIMARY) {
+                Some(longitude) => {
+                    match longitude.value {
+                        Value::Rational(ref v) if !v.is_empty() => Some(v),
+                        _ => None
+                    }
+                },
+                None => None
+            };
+
+            let mut location: Option<(f32, f32)> = None;
+
+            if let Some(lat) = latitude {
+                if let Some(lon) = longitude {
+                    let lat_dec: f32 = lat[0].num as f32 / lat[0].denom as f32 +
+                        (lat[1].num as f32 / lat[1].denom as f32) / 60.0 +
+                        (lat[2].num as f32 / lat[2].denom as f32) / 3600.0;
+
+                    let lon_dec: f32 = lon[0].num as f32 / lon[0].denom as f32 +
+                        (lon[1].num as f32 / lon[1].denom as f32) / 60.0 +
+                        (lon[2].num as f32 / lon[2].denom as f32) / 3600.0;
+
+                    location = Some((lat_dec, lon_dec));
+                }
+            }
+
             return Ok(Photo {
                 path: random_photo_path_clone,
-                orientation
+                orientation,
+                location,
             });
         }
 

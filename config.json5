@@ -8,4 +8,7 @@
     mqtt: true,
     mqtt_topic: "",
     mqtt_host: "",
+
+    reverse_geocode: true,
+    mapbox_api_key: "",
 }
