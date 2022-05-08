@@ -2,7 +2,7 @@
     background-color: #000;
 }
 
-.date-label, .location-label {
+.date-label {
     font-size: 24pt;
     color: #fff;
 }
@@ -10,6 +10,11 @@
 .time-label {
     font-size: 48pt;
     font-weight: bold;
+    color: #fff;
+}
+
+.location-label {
+    font-size: 18pt;
     color: #fff;
 }
 

@@ -28,7 +28,9 @@ RUN set -eux; \
     rustc --version;
 
 RUN apt-get update && apt-get install -y \
-    libgtk-4-dev
+    libgtk-4-dev \
+    pkg-config \
+    libssl-dev
 
 ADD docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
