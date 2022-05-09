@@ -159,24 +159,33 @@ impl App {
                 let (sender, receiver) = MainContext::channel::<bool>(PRIORITY_DEFAULT);
                 thread::spawn(move || {
                     let mqtt_topic_clone = mqtt_topic.clone();
-                    let mut connection = App::connect_mqtt(mqtt_host, mqtt_topic);
+                    let (mut client, mut connection) = App::connect_mqtt(mqtt_host);
+                    App::subscribe_mqtt(&mut client, &mqtt_topic);
 
                     for (_, notification) in connection.iter().enumerate() {
-                        if let Ok(Incoming(Publish(notification))) = notification {
-                            if notification.topic == mqtt_topic_clone {
-                                let payload = String::from_utf8(notification.payload[..].to_vec()).unwrap();
-                                let power = if payload == "1" {"0"} else {"1"};
-                                println!("Received MQTT notification {}", payload);
-                                let err = run_script::run_script!(format!("echo {} | sudo tee /sys/class/backlight/rpi_backlight/bl_power", power));
-                                if err.is_err() {
-                                    println!("Failed to switch lcd display");
-                                }
+                        match notification {
+                            Ok(Incoming(Publish(notification))) => {
+                                if notification.topic == mqtt_topic_clone {
+                                    let payload = String::from_utf8(notification.payload[..].to_vec()).unwrap();
+                                    let power = if payload == "1" {"0"} else {"1"};
+                                    println!("Received MQTT notification {}", payload);
+                                    let err = run_script::run_script!(format!("echo {} | sudo tee /sys/class/backlight/rpi_backlight/bl_power", power));
+                                    if err.is_err() {
+                                        println!("Failed to switch lcd display");
+                                    }
 
-                                if payload == "1" {
-                                    sender.send(false).unwrap();
-                                } else {
-                                    sender.send(true).unwrap();
+                                    if payload == "1" {
+                                        sender.send(false).unwrap();
+                                    } else {
+                                        sender.send(true).unwrap();
+                                    }
                                 }
+                            },
+                            Ok(Incoming(rumqttc::Packet::ConnAck(_))) => {
+                                App::subscribe_mqtt(&mut client, &mqtt_topic);
+                            },
+                            _ => {
+
                             }
                         }
                     }
@@ -212,18 +221,17 @@ impl App {
         );
     }
 
-    fn connect_mqtt(mqtt_host: String, mqtt_topic: String) -> Connection {
+    fn connect_mqtt(mqtt_host: String) -> (Client, Connection) {
         let mut mqtt_options = MqttOptions::new("pi-photo-frame", mqtt_host, 1883);
         mqtt_options.set_keep_alive(Duration::from_secs(5));
         mqtt_options.set_clean_session(false);
         
-        let (mut client, connection) = Client::new(mqtt_options, 10);
-        client.subscribe(mqtt_topic, QoS::AtMostOnce).unwrap();
+        let (client, connection) = Client::new(mqtt_options, 10);
 
-        return connection;
+        return (client, connection);
+    }
+
+    fn subscribe_mqtt(client: &mut Client, mqtt_topic: &String) {
+        client.subscribe(mqtt_topic, QoS::AtMostOnce).unwrap();
     }
 }
-
-
-
-
