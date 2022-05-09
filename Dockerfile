@@ -32,6 +32,8 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev
 
+RUN cargo install cargo-deb
+
 ADD docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 

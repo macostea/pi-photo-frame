@@ -21,7 +21,7 @@ jobs:
       run: docker run --rm -v `pwd`:/app --platform linux/arm64 pi-photo-builder
 
     - name: Create package
-      run: tar -czvf pi-photo-builder.tar.gz target/release/photo-frame
+      run: tar -czvf pi-photo-builder.tar.gz target/debian/*
 
     - name: Upload
       uses: actions/upload-artifact@v3

@@ -2,8 +2,26 @@
 name = "photo-frame"
 version = "0.1.0"
 edition = "2021"
+license-file = "LICENSE"
+description = "Raspberry Pi Photo Frame"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package.metadata.deb]
+maintainer = "Mihai Costea <mihai@mcostea.com>"
+copyright = "2022, Mihai Costea <mihai@mcostea.com>"
+license-file = ["LICENSE", "0"]
+depends = "$auto, libgtk-4-1, openssl"
+maintainer-scripts = "debian/"
+assets = [
+    ["config.json5", "/etc/pi-photo-frame.json5", "644"],
+]
+conf-files = [
+    "/etc/pi-photo-frame.json5"
+]
+
+[package.metadata.deb.systemd-units]
+start = false
 
 [dependencies]
 gtk = { version = "0.4.7", package = "gtk4", features = ["v4_6"] }
