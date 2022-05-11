@@ -1,6 +1,6 @@
 [package]
 name = "photo-frame"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license-file = "LICENSE"
 description = "Raspberry Pi Photo Frame"
@@ -15,6 +15,7 @@ depends = "$auto, libgtk-4-1, openssl"
 maintainer-scripts = "debian/"
 assets = [
     ["config.json5", "/etc/pi-photo-frame.json5", "644"],
+    ["target/release/photo-frame", "/usr/bin/photo-frame", "755"],
 ]
 conf-files = [
     "/etc/pi-photo-frame.json5"

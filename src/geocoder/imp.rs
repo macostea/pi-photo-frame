@@ -24,7 +24,10 @@ impl Geocoder {
             .json()
             .map_err(|e| e.to_string())?;
 
-        let location = &resp.features[0].place_name;
-        return Ok(location.into());
+        if !&resp.features.is_empty() {
+            let location = &resp.features[0].place_name;
+            return Ok(location.into());
+        }
+        return Err("Reverse geocode response empty".to_string());
     }
 }
