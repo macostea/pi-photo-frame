@@ -18,7 +18,12 @@
     color: #fff;
 }
 
-.date-time-container, .location-container {
+.photo-location-label {
+    font-size: 12pt;
+    color: #fff;
+}
+
+.date-time-container, .location-container, .paused-container {
     border: 10px;
     border-radius: 10px;
     padding: 30px;

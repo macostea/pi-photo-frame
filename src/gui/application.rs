@@ -39,7 +39,7 @@ impl App {
         App {
             gtk_application: None,
             config: Default::default(),
-            main_view: Rc::new(RefCell::new(MainView::new())),
+            main_view: Rc::new(RefCell::new(MainView::default())),
             photo_provider: Rc::new(RefCell::new(PhotoProvider::default())),
         }
     }
@@ -75,6 +75,10 @@ impl App {
             let location_label = main_view.borrow().location_label.clone().unwrap();
             let location_box = main_view.borrow().location_box.clone().unwrap();
             let mapbox_api_key = mapbox_api_key.clone();
+            let play_pause_button = main_view.borrow().play_pause_button.clone().unwrap();
+            let play_image = main_view.borrow().play_image.clone().unwrap();
+            let pause_image = main_view.borrow().pause_image.clone().unwrap();
+            let photo_location_label = main_view.borrow().photo_location_label.clone().unwrap();
 
             main_context.spawn_local(clone!(@weak time_label, @weak date_label => async move {
                 loop {
@@ -88,7 +92,7 @@ impl App {
                 }
             }));
 
-            main_context.spawn_local(clone!(@weak picture, @weak photo_provider, @weak location_box, @weak location_label => async move {
+            main_context.spawn_local(clone!(@weak picture, @weak photo_provider, @weak location_box, @weak location_label, @weak photo_location_label => async move {
                 let geocoder = Geocoder::new(mapbox_api_key);
                 loop {
                     timeout_future_seconds(timeout).await;
@@ -146,6 +150,8 @@ impl App {
                             }
                         }
 
+                        photo_location_label.set_text(format!("{}", photo.path.to_str().unwrap()).as_str());
+
                     } else {
                         println!("Error getting photo, {}", photo.unwrap_err());
                     }
@@ -193,13 +199,33 @@ impl App {
 
                 receiver.attach(
                     None,
-                    clone!(@weak photo_provider => @default-return Continue(false),
+                    clone!(@weak photo_provider, @weak play_pause_button, @weak pause_image, @weak photo_location_label => @default-return Continue(false),
                         move |pause| {
                             photo_provider.borrow_mut().paused = pause;
+                            if !pause {
+                                play_pause_button.set_child(Some(&pause_image));
+                                photo_location_label.hide();
+                            }
                             Continue(true)
                         })
                 );
             }
+
+            play_pause_button.connect_clicked(clone!(@weak photo_provider, @weak photo_location_label => move |play_pause_button| {
+                let mut photo_provider = photo_provider.borrow_mut();
+                match photo_provider.paused {
+                    true => {
+                        photo_provider.paused = false;
+                        play_pause_button.set_child(Some(&pause_image));
+                        photo_location_label.hide();
+                    }
+                    false => {
+                        photo_provider.paused = true;
+                        play_pause_button.set_child(Some(&play_image));
+                        photo_location_label.show();
+                    }
+                }
+            }));
         });
     
         self.gtk_application = Some(app);
