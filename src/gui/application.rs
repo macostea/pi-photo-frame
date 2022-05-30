@@ -42,7 +42,7 @@ struct PhotoObj {
 }
 
 struct PhotoData {
-    bytes: glib::Bytes,
+    bytes: Box<glib::Bytes>,
     colorspace: Colorspace,
     has_alpha: bool,
     bits_per_sample: i32,
@@ -118,38 +118,41 @@ impl App {
                     let photo = photo_provider.lock().unwrap().get_photo();
                         if let Ok(photo) = photo {
                             // We might need to rotate the image
-                            let pixbuf = Pixbuf::from_file(photo.path.to_str().unwrap()).unwrap();
+                            let pixbuf = Rc::new(Pixbuf::from_file(photo.path.to_str().unwrap()).unwrap());
                             let new_pixbuf = match photo.orientation {
                                 1 => {
-                                    pixbuf
+                                    Rc::clone(&pixbuf)
                                 }
                                 2 => {
-                                    pixbuf.flip(true).unwrap()
+                                    Rc::new(pixbuf.flip(true).unwrap())
                                 },
                                 3 => {
-                                    pixbuf.rotate_simple(PixbufRotation::Upsidedown).unwrap()
+                                    Rc::new(pixbuf.rotate_simple(PixbufRotation::Upsidedown).unwrap())
                                 },
                                 4 => {
-                                    pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Upsidedown).unwrap()
+                                    Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Upsidedown).unwrap())
                                 },
                                 5 => {
-                                    pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Clockwise).unwrap()
+                                    Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Clockwise).unwrap())
                                 },
                                 6 => {
-                                    pixbuf.rotate_simple(PixbufRotation::Clockwise).unwrap()
+                                    Rc::new(pixbuf.rotate_simple(PixbufRotation::Clockwise).unwrap())
                                 },
                                 7 => {
-                                    pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Counterclockwise).unwrap()
+                                    Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Counterclockwise).unwrap())
                                 },
                                 8 => {
-                                    pixbuf.rotate_simple(PixbufRotation::Counterclockwise).unwrap()
+                                    Rc::new(pixbuf.rotate_simple(PixbufRotation::Counterclockwise).unwrap())
                                 },
-                                _ => pixbuf
+                                _ => Rc::clone(&pixbuf)
                             };
+
+                            drop(pixbuf);
+
                             let mut photo_obj = PhotoObj {
                                 photo: photo.clone(),
                                 photo_data: PhotoData {
-                                    bytes: new_pixbuf.pixel_bytes().unwrap(),
+                                    bytes: Box::new(new_pixbuf.pixel_bytes().unwrap()),
                                     colorspace: new_pixbuf.colorspace(),
                                     has_alpha: new_pixbuf.has_alpha(),
                                     bits_per_sample: new_pixbuf.bits_per_sample(),
@@ -179,18 +182,17 @@ impl App {
 
             photo_receiver.attach(
                 None,
-                clone!(@weak location_box, @weak location_label, @weak photo_location_label => @default-return Continue(false),
+                clone!(@weak picture, @weak location_box, @weak location_label, @weak photo_location_label => @default-return Continue(false),
                     move |photo_obj| {
-                        let photo_data = photo_obj.photo_data;
-                        let pixbuf = Pixbuf::from_bytes(
-                            &photo_data.bytes,
-                            photo_data.colorspace,
-                            photo_data.has_alpha,
-                            photo_data.bits_per_sample,
-                            photo_data.width,
-                            photo_data.height,
-                            photo_data.rowstride
-                        );
+                        let pixbuf = Box::new(Pixbuf::from_bytes(
+                            &photo_obj.photo_data.bytes,
+                            photo_obj.photo_data.colorspace,
+                            photo_obj.photo_data.has_alpha,
+                            photo_obj.photo_data.bits_per_sample,
+                            photo_obj.photo_data.width,
+                            photo_obj.photo_data.height,
+                            photo_obj.photo_data.rowstride
+                        ));
                         
                         picture.set_pixbuf(Some(&pixbuf));
 
