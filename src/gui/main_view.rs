@@ -86,7 +86,7 @@ impl MainView {
         self.play_pause_button = Some(Button::builder()
             .child(self.pause_image.as_ref().unwrap())
             .valign(gtk::Align::Center)
-            .halign(gtk::Align::Center)
+            .halign(gtk::Align::Start)
             .build());
 
         self.photo_location_label = Some(Label::builder()

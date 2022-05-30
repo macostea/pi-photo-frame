@@ -2,17 +2,19 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::thread;
 use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
 use gtk::glib::{self, timeout_future_seconds, PRIORITY_DEFAULT};
 use gtk::glib::{MainContext, clone};
 use gtk::{prelude::*, CssProvider, StyleContext, Application};
 use gtk::gdk::Display;
-use gtk::gdk_pixbuf::{Pixbuf, PixbufRotation};
+use gtk::gdk_pixbuf::{Pixbuf, PixbufRotation, Colorspace};
 use serde::Deserialize;
 use rumqttc::{MqttOptions, QoS, Client, Connection, Event::Incoming, Packet::Publish};
 
 use crate::photo::PhotoProvider;
 use crate::geocoder::Geocoder;
+use crate::photo::imp::Photo;
 
 use super::main_view::MainView;
 
@@ -31,7 +33,22 @@ pub struct App {
     gtk_application: Option<Application>,
     config: Config,
     main_view: Rc<RefCell<MainView>>,
-    photo_provider: Rc<RefCell<PhotoProvider>>,
+}
+
+struct PhotoObj {
+    photo: Photo,
+    photo_data: PhotoData,
+    address: Result<String, String>,
+}
+
+struct PhotoData {
+    bytes: glib::Bytes,
+    colorspace: Colorspace,
+    has_alpha: bool,
+    bits_per_sample: i32,
+    width: i32,
+    height: i32,
+    rowstride: i32,
 }
 
 impl App {
@@ -40,15 +57,13 @@ impl App {
             gtk_application: None,
             config: Default::default(),
             main_view: Rc::new(RefCell::new(MainView::default())),
-            photo_provider: Rc::new(RefCell::new(PhotoProvider::default())),
         }
     }
 
     pub fn build_application(&mut self, config: Config) {
         self.config = config;
 
-        let photo_provider = PhotoProvider::new(self.config.paths.clone());
-        self.photo_provider = Rc::new(RefCell::new(photo_provider));
+        let photo_provider = Arc::new(Mutex::new(PhotoProvider::new(self.config.paths.clone())));
 
         let app = Application::builder()
             .application_id("com.mcostea.photo-frame")
@@ -56,7 +71,6 @@ impl App {
 
         let main_view = self.main_view.clone();
 
-        let photo_provider = self.photo_provider.clone();
         let timeout = self.config.transition_time;
         let mqtt = self.config.mqtt.clone();
         let mqtt_host = self.config.mqtt_host.clone();
@@ -92,20 +106,23 @@ impl App {
                 }
             }));
 
-            main_context.spawn_local(clone!(@weak picture, @weak photo_provider, @weak location_box, @weak location_label, @weak photo_location_label => async move {
-                let geocoder = Geocoder::new(mapbox_api_key);
-                loop {
-                    timeout_future_seconds(timeout).await;
+            let (photo_sender, photo_receiver) = MainContext::channel::<PhotoObj>(PRIORITY_DEFAULT);
 
-                    let photo = photo_provider.borrow().get_photo();
-                    if let Ok(photo) = photo {
-                        if photo.orientation == 1 {
-                            let file = gtk::gio::File::for_path(photo.path.to_str().unwrap());
-                            picture.set_file(Some(&file));
-                        } else {
-                            // We need to rotate the image
+            let photo_provider_clone = Arc::clone(&photo_provider);
+            thread::spawn(move || {
+                let geocoder = Geocoder::new(mapbox_api_key);
+                let photo_provider = Arc::clone(&photo_provider_clone);
+                loop {
+                    thread::sleep(Duration::from_secs(timeout.into()));
+
+                    let photo = photo_provider.lock().unwrap().get_photo();
+                        if let Ok(photo) = photo {
+                            // We might need to rotate the image
                             let pixbuf = Pixbuf::from_file(photo.path.to_str().unwrap()).unwrap();
                             let new_pixbuf = match photo.orientation {
+                                1 => {
+                                    pixbuf
+                                }
                                 2 => {
                                     pixbuf.flip(true).unwrap()
                                 },
@@ -129,12 +146,56 @@ impl App {
                                 },
                                 _ => pixbuf
                             };
-                            picture.set_pixbuf(Some(&new_pixbuf));
+                            let mut photo_obj = PhotoObj {
+                                photo: photo.clone(),
+                                photo_data: PhotoData {
+                                    bytes: new_pixbuf.pixel_bytes().unwrap(),
+                                    colorspace: new_pixbuf.colorspace(),
+                                    has_alpha: new_pixbuf.has_alpha(),
+                                    bits_per_sample: new_pixbuf.bits_per_sample(),
+                                    width: new_pixbuf.width(),
+                                    height: new_pixbuf.height(),
+                                    rowstride: new_pixbuf.rowstride()
+                                },
+                                address: Err("Not set".into())
+                            };
+
+                            if reverse_geocode {
+                                if let Some(location) = photo.location {
+                                    let address = geocoder.reverse_geocode(location.0, location.1);
+                                    photo_obj.address = address;
+                                }
+                            }
+
+                            let res = photo_sender.send(photo_obj);
+                            if let Err(e) = res {
+                                println!("Failed to send photo_obj between threads {}", e);
+                            }
+                        } else {
+                            println!("Error getting photo, {}", photo.unwrap_err());
                         }
+                    }
+            });
+
+            photo_receiver.attach(
+                None,
+                clone!(@weak location_box, @weak location_label, @weak photo_location_label => @default-return Continue(false),
+                    move |photo_obj| {
+                        let photo_data = photo_obj.photo_data;
+                        let pixbuf = Pixbuf::from_bytes(
+                            &photo_data.bytes,
+                            photo_data.colorspace,
+                            photo_data.has_alpha,
+                            photo_data.bits_per_sample,
+                            photo_data.width,
+                            photo_data.height,
+                            photo_data.rowstride
+                        );
+                        
+                        picture.set_pixbuf(Some(&pixbuf));
 
                         if reverse_geocode {
-                            if let Some(location) = photo.location {
-                                let address = geocoder.reverse_geocode(location.0, location.1).await;
+                                let address = photo_obj.address;
                                 match address {
                                     Ok(a) => {
                                         location_box.show();
@@ -145,18 +206,15 @@ impl App {
                                         println!("Failed to get reverse geocode response, {}", e);
                                     }
                                 }
-                            } else {
-                                location_box.hide();
-                            }
+                        } else {
+                            location_box.hide();
                         }
 
-                        photo_location_label.set_text(format!("{}", photo.path.to_str().unwrap()).as_str());
+                        photo_location_label.set_text(format!("{}", photo_obj.photo.path.to_str().unwrap()).as_str());
 
-                    } else {
-                        println!("Error getting photo, {}", photo.unwrap_err());
-                    }
-                }
-            }));
+                        Continue(true)
+                    })
+            );
 
             let mqtt_host = mqtt_host.clone();
             let mqtt_topic = mqtt_topic.clone();
@@ -197,11 +255,14 @@ impl App {
                     }
                 });
 
+
+                let photo_provider_clone = Arc::clone(&photo_provider);
+
                 receiver.attach(
                     None,
-                    clone!(@weak photo_provider, @weak play_pause_button, @weak pause_image, @weak photo_location_label => @default-return Continue(false),
+                    clone!(@weak play_pause_button, @weak pause_image, @weak photo_location_label => @default-return Continue(false),
                         move |pause| {
-                            photo_provider.borrow_mut().paused = pause;
+                            photo_provider_clone.lock().unwrap().paused = pause;
                             if !pause {
                                 play_pause_button.set_child(Some(&pause_image));
                                 photo_location_label.hide();
@@ -212,7 +273,7 @@ impl App {
             }
 
             play_pause_button.connect_clicked(clone!(@weak photo_provider, @weak photo_location_label => move |play_pause_button| {
-                let mut photo_provider = photo_provider.borrow_mut();
+                let mut photo_provider = photo_provider.lock().unwrap();
                 match photo_provider.paused {
                     true => {
                         photo_provider.paused = false;
