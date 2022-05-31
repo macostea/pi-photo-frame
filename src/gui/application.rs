@@ -107,8 +107,8 @@ impl App {
             }));
 
             let (photo_sender, photo_receiver) = MainContext::channel::<PhotoObj>(PRIORITY_DEFAULT);
-
             let photo_provider_clone = Arc::clone(&photo_provider);
+
             thread::spawn(move || {
                 let geocoder = Geocoder::new(mapbox_api_key);
                 let photo_provider = Arc::clone(&photo_provider_clone);
@@ -116,68 +116,70 @@ impl App {
                     thread::sleep(Duration::from_secs(timeout.into()));
 
                     let photo = photo_provider.lock().unwrap().get_photo();
-                        if let Ok(photo) = photo {
-                            // We might need to rotate the image
-                            let pixbuf = Rc::new(Pixbuf::from_file(photo.path.to_str().unwrap()).unwrap());
-                            let new_pixbuf = match photo.orientation {
-                                1 => {
-                                    Rc::clone(&pixbuf)
-                                }
-                                2 => {
-                                    Rc::new(pixbuf.flip(true).unwrap())
-                                },
-                                3 => {
-                                    Rc::new(pixbuf.rotate_simple(PixbufRotation::Upsidedown).unwrap())
-                                },
-                                4 => {
-                                    Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Upsidedown).unwrap())
-                                },
-                                5 => {
-                                    Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Clockwise).unwrap())
-                                },
-                                6 => {
-                                    Rc::new(pixbuf.rotate_simple(PixbufRotation::Clockwise).unwrap())
-                                },
-                                7 => {
-                                    Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Counterclockwise).unwrap())
-                                },
-                                8 => {
-                                    Rc::new(pixbuf.rotate_simple(PixbufRotation::Counterclockwise).unwrap())
-                                },
-                                _ => Rc::clone(&pixbuf)
-                            };
-
-                            drop(pixbuf);
-
-                            let mut photo_obj = PhotoObj {
-                                photo: photo.clone(),
-                                photo_data: PhotoData {
-                                    bytes: Box::new(new_pixbuf.pixel_bytes().unwrap()),
-                                    colorspace: new_pixbuf.colorspace(),
-                                    has_alpha: new_pixbuf.has_alpha(),
-                                    bits_per_sample: new_pixbuf.bits_per_sample(),
-                                    width: new_pixbuf.width(),
-                                    height: new_pixbuf.height(),
-                                    rowstride: new_pixbuf.rowstride()
-                                },
-                                address: Err("Not set".into())
-                            };
-
-                            if reverse_geocode {
-                                if let Some(location) = photo.location {
-                                    let address = geocoder.reverse_geocode(location.0, location.1);
-                                    photo_obj.address = address;
-                                }
+                    if let Ok(photo) = photo {
+                        // We might need to rotate the image
+                        let pixbuf = Rc::new(Pixbuf::from_file(photo.path.to_str().unwrap()).unwrap());
+                        let new_pixbuf = match photo.orientation {
+                            1 => {
+                                Rc::clone(&pixbuf)
                             }
+                            2 => {
+                                Rc::new(pixbuf.flip(true).unwrap())
+                            },
+                            3 => {
+                                Rc::new(pixbuf.rotate_simple(PixbufRotation::Upsidedown).unwrap())
+                            },
+                            4 => {
+                                Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Upsidedown).unwrap())
+                            },
+                            5 => {
+                                Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Clockwise).unwrap())
+                            },
+                            6 => {
+                                Rc::new(pixbuf.rotate_simple(PixbufRotation::Clockwise).unwrap())
+                            },
+                            7 => {
+                                Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Counterclockwise).unwrap())
+                            },
+                            8 => {
+                                Rc::new(pixbuf.rotate_simple(PixbufRotation::Counterclockwise).unwrap())
+                            },
+                            _ => Rc::clone(&pixbuf)
+                        };
 
-                            let res = photo_sender.send(photo_obj);
-                            if let Err(e) = res {
-                                println!("Failed to send photo_obj between threads {}", e);
+                        drop(pixbuf);
+
+                        let mut photo_obj = PhotoObj {
+                            photo: photo.clone(),
+                            photo_data: PhotoData {
+                                bytes: Box::new(new_pixbuf.read_pixel_bytes().unwrap()),
+                                colorspace: new_pixbuf.colorspace(),
+                                has_alpha: new_pixbuf.has_alpha(),
+                                bits_per_sample: new_pixbuf.bits_per_sample(),
+                                width: new_pixbuf.width(),
+                                height: new_pixbuf.height(),
+                                rowstride: new_pixbuf.rowstride()
+                            },
+                            address: Err("Not set".into())
+                        };
+
+                        drop(new_pixbuf);
+
+                        if reverse_geocode {
+                            if let Some(location) = photo.location {
+                                let address = geocoder.reverse_geocode(location.0, location.1);
+                                photo_obj.address = address;
                             }
-                        } else {
-                            println!("Error getting photo, {}", photo.unwrap_err());
                         }
+
+                        let res = photo_sender.send(photo_obj);
+                        if let Err(e) = res {
+                            println!("Failed to send photo_obj between threads {}", e);
+                        }
+                    } else {
+                        println!("Error getting photo, {}", photo.unwrap_err());
                     }
+                }
             });
 
             photo_receiver.attach(
