@@ -18,7 +18,7 @@
     color: #fff;
 }
 
-.photo-location-label {
+.photo-location-label, .photo-date-label {
     font-size: 12pt;
     color: #fff;
 }

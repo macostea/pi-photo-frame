@@ -1,6 +1,6 @@
 use std::{fs::{self, ReadDir}, io, path::PathBuf};
 
-use exif::{Tag, In, Value};
+use exif::{Tag, In, Value, DateTime};
 use rand::prelude::*;
 
 #[derive(Clone, Debug)]
@@ -8,6 +8,7 @@ pub struct Photo {
     pub path: PathBuf,
     pub orientation: u32,
     pub location: Option<(f32, f32)>,
+    pub date: Option<String>,
 }
 
 #[derive(Default)]
@@ -54,6 +55,7 @@ impl PhotoProvider {
                     path: random_photo_path_clone,
                     orientation: 0,
                     location: None,
+                    date: None,
                 });
             }
 
@@ -105,10 +107,30 @@ impl PhotoProvider {
                 }
             }
 
+            let date_time = match exif_obj.get_field(Tag::DateTime, In::PRIMARY) {
+                Some(date_time) => {
+                    match date_time.value {
+                        Value::Ascii(ref v) if !v.is_empty() => Some(v),
+                        _ => None
+                    }
+                },
+                None => None
+            };
+
+            let mut string_date_time: Option<String> = None;
+
+            if let Some(ascii_date_time) = date_time {
+                let date_time = DateTime::from_ascii(&ascii_date_time[0]);
+                if date_time.is_ok() {
+                    string_date_time = Some(date_time.unwrap().to_string());
+                }
+            }
+
             return Ok(Photo {
                 path: random_photo_path_clone,
                 orientation,
                 location,
+                date: string_date_time,
             });
         }
 

@@ -87,6 +87,7 @@ impl App {
             let date_label = main_view.borrow().date_label.clone().unwrap();
             let picture = main_view.borrow().picture.clone().unwrap();
             let location_label = main_view.borrow().location_label.clone().unwrap();
+            let photo_date_label = main_view.borrow().photo_date_label.clone().unwrap();
             let location_box = main_view.borrow().location_box.clone().unwrap();
             let mapbox_api_key = mapbox_api_key.clone();
             let play_pause_button = main_view.borrow().play_pause_button.clone().unwrap();
@@ -184,7 +185,7 @@ impl App {
 
             photo_receiver.attach(
                 None,
-                clone!(@weak picture, @weak location_box, @weak location_label, @weak photo_location_label => @default-return Continue(false),
+                clone!(@weak picture, @weak location_box, @weak location_label, @weak photo_location_label, @weak photo_date_label => @default-return Continue(false),
                     move |photo_obj| {
                         let pixbuf = Box::new(Pixbuf::from_bytes(
                             &photo_obj.photo_data.bytes,
@@ -198,18 +199,30 @@ impl App {
                         
                         picture.set_pixbuf(Some(&pixbuf));
 
-                        if reverse_geocode {
-                                let address = photo_obj.address;
-                                match address {
-                                    Ok(a) => {
-                                        location_box.show();
-                                        location_label.set_text(format!("{}", a).as_str());
-                                    },
-                                    Err(e) => {
-                                        location_box.hide();
-                                        println!("Failed to get reverse geocode response, {}", e);
-                                    }
-                                }
+                        let address = photo_obj.address;
+                        let mut location_found = false;
+                        let mut date_found = false;
+
+                        match address {
+                            Ok(a) => {
+                                location_found = true;
+                                location_label.set_text(format!("{}", a).as_str());
+                            },
+                            Err(e) => {
+                                location_label.set_text("");
+                                println!("Failed to get reverse geocode response, {}", e);
+                            }
+                        }
+
+                        if let Some(string_date) = photo_obj.photo.date {
+                            date_found = true;
+                            photo_date_label.set_text(string_date.as_str());
+                        } else {
+                            photo_date_label.set_text("");
+                        }
+
+                        if location_found || date_found {
+                            location_box.show();
                         } else {
                             location_box.hide();
                         }

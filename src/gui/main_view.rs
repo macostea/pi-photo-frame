@@ -10,6 +10,7 @@ pub struct MainView {
     pub date_label: Option<Label>,
     pub location_box: Option<Box>,
     pub location_label: Option<Label>,
+    pub photo_date_label: Option<Label>,
     pub play_pause_box: Option<Box>,
     pub play_pause_button: Option<Button>,
     pub play_image: Option<Image>,
@@ -52,12 +53,16 @@ impl MainView {
         time_box.append(self.time_label.as_ref().unwrap());
 
         self.location_label = Some(Label::builder()
-            .valign(gtk::Align::Center)
             .halign(gtk::Align::End)
             .build());
         
-        self.location_label.as_ref().unwrap().set_text("Cluj-Napoca");
         self.location_label.as_ref().unwrap().add_css_class("location-label");
+
+        self.photo_date_label = Some(Label::builder()
+            .halign(gtk::Align::End)
+            .build());
+
+        self.photo_date_label.as_ref().unwrap().add_css_class("photo-date-label");
 
         self.location_box = Some(Box::builder()
             .halign(gtk::Align::End)
@@ -68,6 +73,7 @@ impl MainView {
         self.location_box.as_ref().unwrap().add_css_class("location-container");
 
         self.location_box.as_ref().unwrap().append(self.location_label.as_ref().unwrap());
+        self.location_box.as_ref().unwrap().append(self.photo_date_label.as_ref().unwrap());
 
         let mut play_path = Path::new("resources/play-icon.svg");
         if !play_path.exists() {
