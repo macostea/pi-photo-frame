@@ -12,9 +12,9 @@ use gtk::gdk_pixbuf::{Pixbuf, PixbufRotation, Colorspace};
 use serde::Deserialize;
 use rumqttc::{MqttOptions, QoS, Client, Connection, Event::Incoming, Packet::Publish};
 
-use crate::photo::PhotoProvider;
+use crate::photo::MediaProvider;
 use crate::geocoder::Geocoder;
-use crate::photo::imp::Photo;
+use crate::photo::Media;
 
 use super::main_view::MainView;
 
@@ -35,10 +35,15 @@ pub struct App {
     main_view: Rc<RefCell<MainView>>,
 }
 
-struct PhotoObj {
-    photo: Photo,
-    photo_data: PhotoData,
-    address: Result<String, String>,
+enum MediaMessage {
+    Photo {
+        photo: Media,
+        photo_data: PhotoData,
+        address: Result<String, String>,
+    },
+    Video {
+        video: Media
+    }
 }
 
 struct PhotoData {
@@ -63,7 +68,7 @@ impl App {
     pub fn build_application(&mut self, config: Config) {
         self.config = config;
 
-        let photo_provider = Arc::new(Mutex::new(PhotoProvider::new(self.config.paths.clone())));
+        let media_provider = Arc::new(Mutex::new(MediaProvider::new(self.config.paths.clone())));
 
         let app = Application::builder()
             .application_id("com.mcostea.photo-frame")
@@ -83,9 +88,11 @@ impl App {
             main_view.borrow_mut().build_main_view(&app);
 
             let main_context = MainContext::default();
+            let overlay = main_view.borrow().overlay.clone().unwrap();
             let time_label = main_view.borrow().time_label.clone().unwrap();
             let date_label = main_view.borrow().date_label.clone().unwrap();
             let picture = main_view.borrow().picture.clone().unwrap();
+            let video = main_view.borrow().video.clone().unwrap();
             let location_label = main_view.borrow().location_label.clone().unwrap();
             let photo_date_label = main_view.borrow().photo_date_label.clone().unwrap();
             let location_box = main_view.borrow().location_box.clone().unwrap();
@@ -107,127 +114,164 @@ impl App {
                 }
             }));
 
-            let (photo_sender, photo_receiver) = MainContext::channel::<PhotoObj>(PRIORITY_DEFAULT);
-            let photo_provider_clone = Arc::clone(&photo_provider);
+            let (media_sender, media_receiver) = MainContext::channel::<MediaMessage>(PRIORITY_DEFAULT);
+            let media_provider_clone = Arc::clone(&media_provider);
 
             thread::spawn(move || {
                 let geocoder = Geocoder::new(mapbox_api_key);
-                let photo_provider = Arc::clone(&photo_provider_clone);
+                let photo_provider = Arc::clone(&media_provider_clone);
                 loop {
                     thread::sleep(Duration::from_secs(timeout.into()));
 
-                    let photo = photo_provider.lock().unwrap().get_photo();
-                    if let Ok(photo) = photo {
-                        // We might need to rotate the image
-                        let pixbuf = Rc::new(Pixbuf::from_file(photo.path.to_str().unwrap()).unwrap());
-                        let new_pixbuf = match photo.orientation {
-                            1 => {
-                                Rc::clone(&pixbuf)
+                    let media = photo_provider.lock().unwrap().get_media();
+                    match media {
+                        Ok(Media::Photo { ref path, orientation, location, date: _}) => {
+                            // We might need to rotate the image
+                            let pixbuf = Rc::new(Pixbuf::from_file(path.to_str().unwrap()).unwrap());
+                            let new_pixbuf = match orientation {
+                                1 => {
+                                    Rc::clone(&pixbuf)
+                                }
+                                2 => {
+                                    Rc::new(pixbuf.flip(true).unwrap())
+                                },
+                                3 => {
+                                    Rc::new(pixbuf.rotate_simple(PixbufRotation::Upsidedown).unwrap())
+                                },
+                                4 => {
+                                    Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Upsidedown).unwrap())
+                                },
+                                5 => {
+                                    Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Clockwise).unwrap())
+                                },
+                                6 => {
+                                    Rc::new(pixbuf.rotate_simple(PixbufRotation::Clockwise).unwrap())
+                                },
+                                7 => {
+                                    Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Counterclockwise).unwrap())
+                                },
+                                8 => {
+                                    Rc::new(pixbuf.rotate_simple(PixbufRotation::Counterclockwise).unwrap())
+                                },
+                                _ => Rc::clone(&pixbuf)
+                            };
+
+                            drop(pixbuf);
+
+                            let mut address_message = Err("Not set".into());
+                            if reverse_geocode {
+                                if let Some(location) = location {
+                                    let address = geocoder.reverse_geocode(location.0, location.1);
+                                    address_message = address;
+                                }
                             }
-                            2 => {
-                                Rc::new(pixbuf.flip(true).unwrap())
-                            },
-                            3 => {
-                                Rc::new(pixbuf.rotate_simple(PixbufRotation::Upsidedown).unwrap())
-                            },
-                            4 => {
-                                Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Upsidedown).unwrap())
-                            },
-                            5 => {
-                                Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Clockwise).unwrap())
-                            },
-                            6 => {
-                                Rc::new(pixbuf.rotate_simple(PixbufRotation::Clockwise).unwrap())
-                            },
-                            7 => {
-                                Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Counterclockwise).unwrap())
-                            },
-                            8 => {
-                                Rc::new(pixbuf.rotate_simple(PixbufRotation::Counterclockwise).unwrap())
-                            },
-                            _ => Rc::clone(&pixbuf)
-                        };
 
-                        drop(pixbuf);
+                            let photo_obj = MediaMessage::Photo {
+                                photo: media.unwrap().clone(),
+                                photo_data: PhotoData {
+                                    bytes: Box::new(new_pixbuf.read_pixel_bytes().unwrap()),
+                                    colorspace: new_pixbuf.colorspace(),
+                                    has_alpha: new_pixbuf.has_alpha(),
+                                    bits_per_sample: new_pixbuf.bits_per_sample(),
+                                    width: new_pixbuf.width(),
+                                    height: new_pixbuf.height(),
+                                    rowstride: new_pixbuf.rowstride()
+                                },
+                                address: address_message
+                            };
 
-                        let mut photo_obj = PhotoObj {
-                            photo: photo.clone(),
-                            photo_data: PhotoData {
-                                bytes: Box::new(new_pixbuf.read_pixel_bytes().unwrap()),
-                                colorspace: new_pixbuf.colorspace(),
-                                has_alpha: new_pixbuf.has_alpha(),
-                                bits_per_sample: new_pixbuf.bits_per_sample(),
-                                width: new_pixbuf.width(),
-                                height: new_pixbuf.height(),
-                                rowstride: new_pixbuf.rowstride()
-                            },
-                            address: Err("Not set".into())
-                        };
+                            drop(new_pixbuf);
 
-                        drop(new_pixbuf);
 
-                        if reverse_geocode {
-                            if let Some(location) = photo.location {
-                                let address = geocoder.reverse_geocode(location.0, location.1);
-                                photo_obj.address = address;
+
+                            let res = media_sender.send(photo_obj);
+                            if let Err(e) = res {
+                                println!("Failed to send photo_obj between threads {}", e);
                             }
-                        }
 
-                        let res = photo_sender.send(photo_obj);
-                        if let Err(e) = res {
-                            println!("Failed to send photo_obj between threads {}", e);
+                        },
+                        Ok(Media::Video { path: _ }) => {
+                            let video_obj = MediaMessage::Video {
+                                video: media.unwrap().clone()
+                            };
+
+                            let res = media_sender.send(video_obj);
+                            if let Err(e) = res {
+                                println!("Failed to send video_obj between threads {}", e);
+                            }
+                        },
+                        _ => {
+                            println!("Error getting photo, {}", media.unwrap_err());
                         }
-                    } else {
-                        println!("Error getting photo, {}", photo.unwrap_err());
                     }
                 }
             });
 
-            photo_receiver.attach(
+            media_receiver.attach(
                 None,
-                clone!(@weak picture, @weak location_box, @weak location_label, @weak photo_location_label, @weak photo_date_label => @default-return Continue(false),
+                clone!(@weak overlay, @weak picture, @weak video, @weak location_box, @weak location_label, @weak photo_location_label, @weak photo_date_label => @default-return Continue(false),
                     move |photo_obj| {
-                        let pixbuf = Box::new(Pixbuf::from_bytes(
-                            &photo_obj.photo_data.bytes,
-                            photo_obj.photo_data.colorspace,
-                            photo_obj.photo_data.has_alpha,
-                            photo_obj.photo_data.bits_per_sample,
-                            photo_obj.photo_data.width,
-                            photo_obj.photo_data.height,
-                            photo_obj.photo_data.rowstride
-                        ));
-                        
-                        picture.set_pixbuf(Some(&pixbuf));
+                        match photo_obj {
+                            MediaMessage::Photo { photo, photo_data, address } => {
+                                overlay.set_child(Some(&picture));
+                                video.set_file(None as Option<&gtk::gio::File>);
 
-                        let address = photo_obj.address;
-                        let mut location_found = false;
-                        let mut date_found = false;
+                                let pixbuf = Box::new(Pixbuf::from_bytes(
+                                    &photo_data.bytes,
+                                    photo_data.colorspace,
+                                    photo_data.has_alpha,
+                                    photo_data.bits_per_sample,
+                                    photo_data.width,
+                                    photo_data.height,
+                                    photo_data.rowstride
+                                ));
 
-                        match address {
-                            Ok(a) => {
-                                location_found = true;
-                                location_label.set_text(format!("{}", a).as_str());
+                                picture.set_pixbuf(Some(&pixbuf));
+
+                                let mut location_found = false;
+                                let mut date_found = false;
+
+                                match address {
+                                    Ok(a) => {
+                                        location_found = true;
+                                        location_label.set_text(format!("{}", a).as_str());
+                                    },
+                                    Err(e) => {
+                                        location_label.set_text("");
+                                        println!("Failed to get reverse geocode response, {}", e);
+                                    }
+                                }
+
+                                if let Media::Photo { path, orientation: _, location: _, date } = photo {
+                                    if let Some(string_date) = date {
+                                        date_found = true;
+                                        photo_date_label.set_text(string_date.as_str());
+                                    } else {
+                                        photo_date_label.set_text("");
+                                    }
+
+                                    photo_location_label.set_text(format!("{}", path.to_str().unwrap()).as_str());
+
+                                }
+
+                                if location_found || date_found {
+                                    location_box.show();
+                                } else {
+                                    location_box.hide();
+                                }
                             },
-                            Err(e) => {
-                                location_label.set_text("");
-                                println!("Failed to get reverse geocode response, {}", e);
+
+                            MediaMessage::Video { video: video_file } => {
+                                if let Media::Video { path } = video_file {
+                                    println!("Got a video, trying to play it {}", path.to_str().unwrap());
+                                    overlay.set_child(Some(&video));
+                                    picture.set_file(None as Option<&gtk::gio::File>);
+
+                                    let file = gtk::gio::File::for_path(path.to_str().unwrap());
+                                    video.set_file(Some(&file));
+                                }
                             }
                         }
-
-                        if let Some(string_date) = photo_obj.photo.date {
-                            date_found = true;
-                            photo_date_label.set_text(string_date.as_str());
-                        } else {
-                            photo_date_label.set_text("");
-                        }
-
-                        if location_found || date_found {
-                            location_box.show();
-                        } else {
-                            location_box.hide();
-                        }
-
-                        photo_location_label.set_text(format!("{}", photo_obj.photo.path.to_str().unwrap()).as_str());
 
                         Continue(true)
                     })
@@ -273,13 +317,13 @@ impl App {
                 });
 
 
-                let photo_provider_clone = Arc::clone(&photo_provider);
+                let media_provider_clone = Arc::clone(&media_provider);
 
                 receiver.attach(
                     None,
                     clone!(@weak play_pause_button, @weak pause_image, @weak photo_location_label => @default-return Continue(false),
                         move |pause| {
-                            photo_provider_clone.lock().unwrap().paused = pause;
+                            media_provider_clone.lock().unwrap().paused = pause;
                             if !pause {
                                 play_pause_button.set_child(Some(&pause_image));
                                 photo_location_label.hide();
@@ -289,16 +333,16 @@ impl App {
                 );
             }
 
-            play_pause_button.connect_clicked(clone!(@weak photo_provider, @weak photo_location_label => move |play_pause_button| {
-                let mut photo_provider = photo_provider.lock().unwrap();
-                match photo_provider.paused {
+            play_pause_button.connect_clicked(clone!(@weak media_provider, @weak photo_location_label => move |play_pause_button| {
+                let mut media_provider = media_provider.lock().unwrap();
+                match media_provider.paused {
                     true => {
-                        photo_provider.paused = false;
+                        media_provider.paused = false;
                         play_pause_button.set_child(Some(&pause_image));
                         photo_location_label.hide();
                     }
                     false => {
-                        photo_provider.paused = true;
+                        media_provider.paused = true;
                         play_pause_button.set_child(Some(&play_image));
                         photo_location_label.show();
                     }

@@ -1,2 +1,3 @@
 pub mod imp;
-pub use imp::PhotoProvider;
+pub use imp::MediaProvider;
+pub use imp::Media;

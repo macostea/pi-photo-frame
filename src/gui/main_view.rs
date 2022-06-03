@@ -1,11 +1,13 @@
 use std::path::Path;
 
-use gtk::{prelude::*, Picture, Label, Box, Overlay, ApplicationWindow, Application, Button, Image, gdk_pixbuf::Pixbuf};
+use gtk::{prelude::*, Picture, Label, Box, Overlay, ApplicationWindow, Application, Button, Image, gdk_pixbuf::Pixbuf, Video};
 
 #[derive(Default)]
 pub struct MainView {
     pub window: Option<ApplicationWindow>,
+    pub overlay: Option<Overlay>,
     pub picture: Option<Picture>,
+    pub video: Option<Video>,
     pub time_label: Option<Label>,
     pub date_label: Option<Label>,
     pub location_box: Option<Box>,
@@ -23,6 +25,13 @@ impl MainView {
         self.picture = Some(Picture::builder()
             .halign(gtk::Align::Fill)
             .valign(gtk::Align::Fill)
+            .build());
+
+        self.video = Some(Video::builder()
+            .halign(gtk::Align::Fill)
+            .valign(gtk::Align::Fill)
+            .autoplay(true)
+            .loop_(true)
             .build());
     
         self.time_label = Some(Label::builder()
@@ -112,18 +121,18 @@ impl MainView {
         self.play_pause_box.as_ref().unwrap().append(self.play_pause_button.as_ref().unwrap());
         self.play_pause_box.as_ref().unwrap().append(self.photo_location_label.as_ref().unwrap());
 
-        let overlay = Overlay::builder()
-        .child(self.picture.as_ref().unwrap())
-        .build();
+        self.overlay = Some(Overlay::builder()
+            .child(self.picture.as_ref().unwrap())
+            .build());
 
-        overlay.add_overlay(&time_box);
-        overlay.add_overlay(self.location_box.as_ref().unwrap());
-        overlay.add_overlay(self.play_pause_box.as_ref().unwrap());
+        self.overlay.as_ref().unwrap().add_overlay(&time_box);
+        self.overlay.as_ref().unwrap().add_overlay(self.location_box.as_ref().unwrap());
+        self.overlay.as_ref().unwrap().add_overlay(self.play_pause_box.as_ref().unwrap());
         
         self.window = Some(ApplicationWindow::builder()
             .application(app)
             .fullscreened(true)
-            .child(&overlay)
+            .child(self.overlay.as_ref().unwrap())
             .build());
     
         self.window.as_ref().unwrap().present();
