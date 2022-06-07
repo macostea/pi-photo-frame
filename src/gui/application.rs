@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use gtk::glib::{self, timeout_future_seconds, PRIORITY_DEFAULT};
 use gtk::glib::{MainContext, clone};
-use gtk::{prelude::*, CssProvider, StyleContext, Application};
+use gtk::{prelude::*, CssProvider, StyleContext, Application, MediaFile};
 use gtk::gdk::Display;
 use gtk::gdk_pixbuf::{Pixbuf, PixbufRotation, Colorspace};
 use serde::Deserialize;
@@ -92,7 +92,6 @@ impl App {
             let time_label = main_view.borrow().time_label.clone().unwrap();
             let date_label = main_view.borrow().date_label.clone().unwrap();
             let picture = main_view.borrow().picture.clone().unwrap();
-            let video = main_view.borrow().video.clone().unwrap();
             let location_label = main_view.borrow().location_label.clone().unwrap();
             let photo_date_label = main_view.borrow().photo_date_label.clone().unwrap();
             let location_box = main_view.borrow().location_box.clone().unwrap();
@@ -125,7 +124,7 @@ impl App {
 
                     let media = photo_provider.lock().unwrap().get_media();
                     match media {
-                        Ok(Media::Photo { ref path, orientation, location, date: _}) => {
+                        Ok(Some(Media::Photo { ref path, orientation, location, date: _})) => {
                             // We might need to rotate the image
                             let pixbuf = Rc::new(Pixbuf::from_file(path.to_str().unwrap()).unwrap());
                             let new_pixbuf = match orientation {
@@ -167,7 +166,7 @@ impl App {
                             }
 
                             let photo_obj = MediaMessage::Photo {
-                                photo: media.unwrap().clone(),
+                                photo: media.unwrap().unwrap().clone(),
                                 photo_data: PhotoData {
                                     bytes: Box::new(new_pixbuf.read_pixel_bytes().unwrap()),
                                     colorspace: new_pixbuf.colorspace(),
@@ -190,9 +189,9 @@ impl App {
                             }
 
                         },
-                        Ok(Media::Video { path: _ }) => {
+                        Ok(Some(Media::Video { path: _ })) => {
                             let video_obj = MediaMessage::Video {
-                                video: media.unwrap().clone()
+                                video: media.unwrap().unwrap().clone()
                             };
 
                             let res = media_sender.send(video_obj);
@@ -200,6 +199,10 @@ impl App {
                                 println!("Failed to send video_obj between threads {}", e);
                             }
                         },
+                        Ok(None) => {
+                            // Everything went ok but there was no media
+                            // Most likely paused, don't do anything.
+                        }
                         _ => {
                             println!("Error getting photo, {}", media.unwrap_err());
                         }
@@ -209,13 +212,10 @@ impl App {
 
             media_receiver.attach(
                 None,
-                clone!(@weak overlay, @weak picture, @weak video, @weak location_box, @weak location_label, @weak photo_location_label, @weak photo_date_label => @default-return Continue(false),
+                clone!(@weak overlay, @weak picture, @weak location_box, @weak location_label, @weak photo_location_label, @weak photo_date_label => @default-return Continue(false),
                     move |photo_obj| {
                         match photo_obj {
                             MediaMessage::Photo { photo, photo_data, address } => {
-                                overlay.set_child(Some(&picture));
-                                video.set_file(None as Option<&gtk::gio::File>);
-
                                 let pixbuf = Box::new(Pixbuf::from_bytes(
                                     &photo_data.bytes,
                                     photo_data.colorspace,
@@ -264,11 +264,35 @@ impl App {
                             MediaMessage::Video { video: video_file } => {
                                 if let Media::Video { path } = video_file {
                                     println!("Got a video, trying to play it {}", path.to_str().unwrap());
-                                    overlay.set_child(Some(&video));
-                                    picture.set_file(None as Option<&gtk::gio::File>);
+                                    let media_file = MediaFile::new();
+                                    let file = gtk::gio::File::for_path(path);
+                                    media_file.set_file(Some(&file));
 
-                                    let file = gtk::gio::File::for_path(path.to_str().unwrap());
-                                    video.set_file(Some(&file));
+                                    media_file.connect_playing_notify(
+                                        move |media_file| {
+                                            println!("Media is playing: {}", media_file.is_playing());
+                                        }
+                                    );
+                                    media_file.connect_error_notify(
+                                        move |media_file| {
+                                            let error = media_file.error().unwrap();
+                                            println!("Error in MediaFile: {}", error);
+                                        }
+                                    );
+                                    media_file.connect_prepared_notify(
+                                        move |media_file| {
+                                            if media_file.error().is_some() {
+                                                return;
+                                            }
+                                            if !media_file.has_video() {
+                                                println!("Media is not a valid video file");
+                                                return;
+                                            }
+                                        }
+                                    );
+
+                                    picture.set_paintable(Some(&media_file));
+                                    media_file.play();
                                 }
                             }
                         }

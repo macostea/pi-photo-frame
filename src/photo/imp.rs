@@ -34,16 +34,16 @@ impl MediaProvider {
                 "png".to_string(),
             ],
             video_valid_extensions: vec![
-                // "mov".to_string(),
-                // "mp4".to_string(),
+                "mov".to_string(),
+                "mp4".to_string(),
             ],
             paused: false,
         }
     }
 
-    pub fn get_media(&self) -> Result<Media, io::Error> {
+    pub fn get_media(&self) -> Result<Option<Media>, io::Error> {
         if self.paused {
-            return Err(io::Error::new(io::ErrorKind::Interrupted, "Paused"));
+            return Ok(None);
         }
 
         let mut rng = rand::thread_rng();
@@ -66,12 +66,12 @@ impl MediaProvider {
                 let exif = exifreader.read_from_container(&mut bufreader).map_err(|e| io::Error::new(io::ErrorKind::Other, e));
 
                 if exif.is_err() {
-                    return Ok(Media::Photo {
+                    return Ok(Some(Media::Photo {
                         path: random_media_path_clone,
                         orientation: 0,
                         location: None,
                         date: None,
-                    });
+                    }));
                 }
 
                 let exif_obj = exif.unwrap();
@@ -141,14 +141,14 @@ impl MediaProvider {
                     }
                 }
 
-                return Ok(Media::Photo {
+                return Ok(Some(Media::Photo {
                     path: random_media_path_clone,
                     orientation,
                     location,
                     date: string_date_time,
-                });
+                }));
             } else {
-                return Ok(Media::Video { path: random_media_path });
+                return Ok(Some(Media::Video { path: random_media_path }));
             }
         }
 
