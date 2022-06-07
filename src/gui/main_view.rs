@@ -1,13 +1,12 @@
 use std::path::Path;
 
-use gtk::{prelude::*, Picture, Label, Box, Overlay, ApplicationWindow, Application, Button, Image, gdk_pixbuf::Pixbuf, Video};
+use gtk::{prelude::*, Picture, Label, Box, Overlay, ApplicationWindow, Application, Button, Image, gdk_pixbuf::Pixbuf};
 
 #[derive(Default)]
 pub struct MainView {
     pub window: Option<ApplicationWindow>,
     pub overlay: Option<Overlay>,
     pub picture: Option<Picture>,
-    pub video: Option<Video>,
     pub time_label: Option<Label>,
     pub date_label: Option<Label>,
     pub location_box: Option<Box>,
@@ -25,13 +24,6 @@ impl MainView {
         self.picture = Some(Picture::builder()
             .halign(gtk::Align::Fill)
             .valign(gtk::Align::Fill)
-            .build());
-
-        self.video = Some(Video::builder()
-            .halign(gtk::Align::Fill)
-            .valign(gtk::Align::Fill)
-            .autoplay(true)
-            .loop_(true)
             .build());
     
         self.time_label = Some(Label::builder()
