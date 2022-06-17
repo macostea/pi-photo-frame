@@ -1,5 +1,9 @@
 FROM debian:bookworm
 
+RUN echo "deb http://mirrors.xservers.ro/debian bookworm main" > /etc/apt/sources.list && \
+    echo "deb http://security.debian.org/debian-security bookworm-security main" >> /etc/apt/sources.list && \
+    echo "deb http://mirrors.xservers.ro/debian bookworm-updates main " >> /etc/apt/sources.list
+
 RUN apt-get update && apt-get install -y wget
 
 ENV RUSTUP_HOME=/usr/local/rustup \
