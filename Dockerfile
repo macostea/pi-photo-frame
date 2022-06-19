@@ -38,6 +38,13 @@ RUN apt-get update && apt-get install -y \
 
 RUN cargo install cargo-deb
 
+RUN cd /tmp && \
+    wget https://github.com/mozilla/sccache/releases/download/v0.3.0/sccache-v0.3.0-x86_64-unknown-linux-musl.tar.gz && \
+    tar -xzf sccache-v0.3.0-x86_64-unknown-linux-musl.tar.gz && \
+    cp sccache-v0.3.0-x86_64-unknown-linux-musl/sccache /usr/local/bin/sccache && \
+    chmod +x /usr/local/bin/sccache && \
+    rm -rf sccache-v0.3.0-x86_64-unknown-linux-musl*
+
 ADD docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 

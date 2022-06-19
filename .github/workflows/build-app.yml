@@ -14,7 +14,11 @@ jobs:
     - uses: actions/checkout@v3
 
     - name: Run the build
-      run: docker run --entrypoint 'sh' --rm -v `pwd`:/app mcostea/pi-photo-frame-builder -c "cargo build -r -j 1 && cargo deb -v"
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_ACCESS_KEY }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+        SCCACHE_ENDPOINT: ${{ secrets.MINIO_URL }}
+      run: docker run -e SCCACHE_BUCKET=sccache -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} -e SCCACHE_ENDPOINT=${SCCACHE_ENDPOINT} -e RUSTC_WRAPPER=/usr/local/bin/sccache --entrypoint 'sh' --rm -v `pwd`:/app mcostea/pi-photo-frame-builder -c "cargo build -r -j 1 && cargo deb -v"
 
     - name: Create package
       run: tar -czvf pi-photo-builder.tar.gz target/debian/*
