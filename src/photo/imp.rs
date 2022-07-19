@@ -12,7 +12,9 @@ pub enum Media {
         date: Option<String>,
     },
     Video {
-        path: PathBuf
+        path: PathBuf,
+        location: Option<(f32, f32)>,
+        date: Option<String>,
     }
 }
 
@@ -56,27 +58,25 @@ impl MediaProvider {
             let all_extensions = self.photo_valid_extensions.iter().cloned().chain(self.video_valid_extensions.iter().cloned()).collect();
 
             let random_media_path = MediaProvider::get_random_entry(dir, all_extensions)?;
-            let random_media_path_clone = random_media_path.clone();
 
             let extension = random_media_path.extension().unwrap().to_str().unwrap();
 
-            if self.photo_valid_extensions.contains(&extension.to_lowercase()) {
-                let file = fs::File::open(random_media_path)?;
-                let mut bufreader = std::io::BufReader::new(&file);
-                let exif = exifreader.read_from_container(&mut bufreader).map_err(|e| io::Error::new(io::ErrorKind::Other, e));
+            let file = fs::File::open(random_media_path.clone())?;
+            let mut bufreader = std::io::BufReader::new(&file);
 
-                if exif.is_err() {
-                    return Ok(Some(Media::Photo {
-                        path: random_media_path_clone,
-                        orientation: 0,
-                        location: None,
-                        date: None,
-                    }));
-                }
+            let mut orientation = 0;
+            let mut location = None;
+            let mut date = None;
 
+            let exif = exifreader.read_from_container(&mut bufreader).map_err(|e| io::Error::new(io::ErrorKind::Other, e));
+
+            if let Err(e) = exif {
+                println!("Error reading exif {:?}", e);
+            } else {
+            
                 let exif_obj = exif.unwrap();
 
-                let orientation = match exif_obj.get_field(Tag::Orientation, In::PRIMARY) {
+                orientation = match exif_obj.get_field(Tag::Orientation, In::PRIMARY) {
                     Some(orientation) => {
                         match orientation.value.get_uint(0) {
                             Some(v @ 1..=8) => v,
@@ -106,8 +106,6 @@ impl MediaProvider {
                     None => None
                 };
 
-                let mut location: Option<(f32, f32)> = None;
-
                 if let Some(lat) = latitude {
                     if let Some(lon) = longitude {
                         let lat_dec: f32 = lat[0].num as f32 / lat[0].denom as f32 +
@@ -132,23 +130,27 @@ impl MediaProvider {
                     None => None
                 };
 
-                let mut string_date_time: Option<String> = None;
-
                 if let Some(ascii_date_time) = date_time {
                     let date_time = DateTime::from_ascii(&ascii_date_time[0]);
                     if date_time.is_ok() {
-                        string_date_time = Some(date_time.unwrap().to_string());
+                        date = Some(date_time.unwrap().to_string());
                     }
                 }
+            }
 
+            if self.photo_valid_extensions.contains(&extension.to_lowercase()) {
                 return Ok(Some(Media::Photo {
-                    path: random_media_path_clone,
+                    path: random_media_path.clone(),
                     orientation,
                     location,
-                    date: string_date_time,
+                    date,
                 }));
             } else {
-                return Ok(Some(Media::Video { path: random_media_path }));
+                return Ok(Some(Media::Video {
+                    path: random_media_path.clone(),
+                    location,
+                    date,
+                }));
             }
         }
 

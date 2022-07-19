@@ -42,7 +42,8 @@ enum MediaMessage {
         address: Result<String, String>,
     },
     Video {
-        video: Media
+        video: Media,
+        address: Result<String, String>,
     }
 }
 
@@ -189,9 +190,18 @@ impl App {
                             }
 
                         },
-                        Ok(Some(Media::Video { path: _ })) => {
+                        Ok(Some(Media::Video { path: _, location, date: _ })) => {
+                            let mut address_message = Err("Not set".into());
+                            if reverse_geocode {
+                                if let Some(location) = location {
+                                    let address = geocoder.reverse_geocode(location.0, location.1);
+                                    address_message = address;
+                                }
+                            }
+
                             let video_obj = MediaMessage::Video {
-                                video: media.unwrap().unwrap().clone()
+                                video: media.unwrap().unwrap().clone(),
+                                address: address_message,
                             };
 
                             let res = media_sender.send(video_obj);
@@ -261,9 +271,39 @@ impl App {
                                 }
                             },
 
-                            MediaMessage::Video { video: video_file } => {
-                                if let Media::Video { path } = video_file {
+                            MediaMessage::Video { video: video_file, address } => {
+                                if let Media::Video { path, location: _, date } = video_file {
                                     println!("Got a video, trying to play it {}", path.to_str().unwrap());
+
+                                    let mut location_found = false;
+                                    let mut date_found = false;
+
+                                    match address {
+                                        Ok(a) => {
+                                            location_found = true;
+                                            location_label.set_text(format!("{}", a).as_str());
+                                        },
+                                        Err(e) => {
+                                            location_label.set_text("");
+                                            println!("Failed to get reverse geocode response, {}", e);
+                                        }
+                                    }
+
+                                    if let Some(string_date) = date {
+                                        date_found = true;
+                                        photo_date_label.set_text(string_date.as_str());
+                                    } else {
+                                        photo_date_label.set_text("");
+                                    }
+
+                                    photo_location_label.set_text(format!("{}", path.to_str().unwrap()).as_str());
+
+                                    if location_found || date_found {
+                                        location_box.show();
+                                    } else {
+                                        location_box.hide();
+                                    }
+
                                     let media_file = MediaFile::new();
                                     let file = gtk::gio::File::for_path(path);
                                     media_file.set_file(Some(&file));
