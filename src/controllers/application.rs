@@ -349,7 +349,7 @@ impl App {
 
     fn load_css() {
         let provider = CssProvider::new();
-        provider.load_from_data("../style/style.css");
+        provider.load_from_data(include_str!("../style/style.css"));
     
         StyleContext::add_provider_for_display(
             &Display::default().expect("Could not connect to a display"),
