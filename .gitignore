@@ -11,4 +11,4 @@ Cargo.lock
 
 .DS_Store
 
-config.json5
+builder/rootfs/
