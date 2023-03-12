@@ -2,7 +2,7 @@ use std::path::Path;
 
 use gtk::{prelude::*, Picture, Label, Box, Overlay, ApplicationWindow, Application, Button, Image, gdk_pixbuf::Pixbuf};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct MainView {
     pub window: Option<ApplicationWindow>,
     pub overlay: Option<Overlay>,

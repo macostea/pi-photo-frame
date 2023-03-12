@@ -1,10 +1,14 @@
-use std::{fs, path::Path};
+use std::{fs, path::Path, io};
 
-mod gui;
-use gui::application::{App, Config};
+mod controllers;
+
+use controllers::application::{App, Config};
+use tracing::Level;
 
 mod photo;
 mod geocoder;
+mod gui;
+mod utils;
 
 fn load_config() -> Config {
     let mut path = Path::new("config.json5");
@@ -17,6 +21,8 @@ fn load_config() -> Config {
 fn main() {
     let config = load_config();
     let mut app = App::new();
+
+    tracing_subscriber::fmt().with_max_level(Level::DEBUG).with_writer(io::stdout).init();
     
     app.build_application(config);
 

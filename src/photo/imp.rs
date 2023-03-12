@@ -2,6 +2,7 @@ use std::{fs::{self, ReadDir}, io, path::PathBuf};
 
 use exif::{Tag, In, Value, DateTime};
 use rand::prelude::*;
+use tracing::{instrument, debug};
 
 #[derive(Clone, Debug)]
 pub enum Media {
@@ -16,7 +17,7 @@ pub enum Media {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct MediaProvider {
     paths: Vec<String>,
     photo_valid_extensions: Vec<String>,
@@ -41,6 +42,7 @@ impl MediaProvider {
         }
     }
 
+    #[instrument]
     pub fn get_media(&self) -> Result<Option<Media>, io::Error> {
         if self.paused {
             return Ok(None);
@@ -51,7 +53,8 @@ impl MediaProvider {
 
         let exifreader = exif::Reader::new();
 
-        for _ in 0..5 {
+        for t in 0..5 {
+            debug!(current_try=t, "Trying to get a valid photo");
             let dir = fs::read_dir(self.paths[index].clone())?;
             let all_extensions = self.photo_valid_extensions.iter().cloned().chain(self.video_valid_extensions.iter().cloned()).collect();
 
@@ -61,11 +64,13 @@ impl MediaProvider {
             let extension = random_media_path.extension().unwrap().to_str().unwrap();
 
             if self.photo_valid_extensions.contains(&extension.to_lowercase()) {
+                debug!("Found a valid photo");
                 let file = fs::File::open(random_media_path)?;
                 let mut bufreader = std::io::BufReader::new(&file);
                 let exif = exifreader.read_from_container(&mut bufreader).map_err(|e| io::Error::new(io::ErrorKind::Other, e));
 
                 if exif.is_err() {
+                    debug!("No exif data");
                     return Ok(Some(Media::Photo {
                         path: random_media_path_clone,
                         orientation: 0,
@@ -85,6 +90,7 @@ impl MediaProvider {
                     },
                     None => 1
                 };
+                debug!(orientation, "Found orientation");
 
                 let latitude = match exif_obj.get_field(Tag::GPSLatitude, In::PRIMARY) {
                     Some(latitude) => {
@@ -113,10 +119,12 @@ impl MediaProvider {
                         let lat_dec: f32 = lat[0].num as f32 / lat[0].denom as f32 +
                             (lat[1].num as f32 / lat[1].denom as f32) / 60.0 +
                             (lat[2].num as f32 / lat[2].denom as f32) / 3600.0;
+                        debug!(lat_dec, "Found latitude");
 
                         let lon_dec: f32 = lon[0].num as f32 / lon[0].denom as f32 +
                             (lon[1].num as f32 / lon[1].denom as f32) / 60.0 +
                             (lon[2].num as f32 / lon[2].denom as f32) / 3600.0;
+                        debug!(lon_dec, "Found longitude");
 
                         location = Some((lat_dec, lon_dec));
                     }
@@ -138,6 +146,7 @@ impl MediaProvider {
                     let date_time = DateTime::from_ascii(&ascii_date_time[0]);
                     if date_time.is_ok() {
                         string_date_time = Some(date_time.unwrap().to_string());
+                        debug!(string_date_time, "Found time");
                     }
                 }
 
@@ -155,12 +164,14 @@ impl MediaProvider {
         return Err(io::Error::new(io::ErrorKind::NotFound, "No valid photo found"))
     }
 
+    #[instrument]
     fn get_random_entry(dir: ReadDir, valid_extensions: Vec<String>) -> Result<PathBuf, io::Error> {
         let mut rng = rand::thread_rng();
 
         let entry = dir.choose(&mut rng);
         if let Some(entry) = entry {
             let entry = entry?;
+            debug!(current_entry=entry.path().to_str(), "Trying an entry");
             if entry.path().is_dir() {
                 if let Some(dir) = fs::read_dir(entry.path()).ok() {
                     println!("Dir found, recursing: {:?}", dir);
@@ -171,6 +182,7 @@ impl MediaProvider {
             if let Some(extension) = entry.path().extension() {
                 if let Some(extension) = extension.to_str() {
                     if valid_extensions.contains(&extension.to_lowercase()) {
+                        debug!("Found a valid photo in dir");
                         return Ok(entry.path());
                     }
                 }

@@ -8,17 +8,19 @@ use gtk::glib::{self, timeout_future_seconds, PRIORITY_DEFAULT};
 use gtk::glib::{MainContext, clone};
 use gtk::{prelude::*, CssProvider, StyleContext, Application, MediaFile};
 use gtk::gdk::Display;
-use gtk::gdk_pixbuf::{Pixbuf, PixbufRotation, Colorspace};
+use gtk::gdk_pixbuf::{Pixbuf, PixbufRotation};
 use serde::Deserialize;
 use rumqttc::{MqttOptions, QoS, Client, Connection, Event::Incoming, Packet::Publish};
+use tracing::{span, Level, debug, instrument};
 
 use crate::photo::MediaProvider;
 use crate::geocoder::Geocoder;
 use crate::photo::Media;
 
-use super::main_view::MainView;
+use crate::gui::main_view::MainView;
+use crate::utils::unsafe_wrapper::UnsafeSendSync;
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Debug)]
 pub struct Config {
     paths: Vec<String>,
     transition_time: u32,
@@ -29,6 +31,7 @@ pub struct Config {
     mapbox_api_key: String,
 }
 
+#[derive(Debug)]
 pub struct App {
     gtk_application: Option<Application>,
     config: Config,
@@ -47,13 +50,7 @@ enum MediaMessage {
 }
 
 struct PhotoData {
-    bytes: Box<glib::Bytes>,
-    colorspace: Colorspace,
-    has_alpha: bool,
-    bits_per_sample: i32,
-    width: i32,
-    height: i32,
-    rowstride: i32,
+    pixbuf: Arc<UnsafeSendSync<Pixbuf>>
 }
 
 impl App {
@@ -65,6 +62,7 @@ impl App {
         }
     }
 
+    #[instrument]
     pub fn build_application(&mut self, config: Config) {
         self.config = config;
 
@@ -120,74 +118,42 @@ impl App {
                 let geocoder = Geocoder::new(mapbox_api_key);
                 let photo_provider = Arc::clone(&media_provider_clone);
                 loop {
+                    let span = span!(Level::TRACE, "get_photo_thread");
+                    let _enter = span.enter();
+
                     thread::sleep(Duration::from_secs(timeout.into()));
 
                     let media = photo_provider.lock().unwrap().get_media();
+                    debug!("Got media");
                     match media {
                         Ok(Some(Media::Photo { ref path, orientation, location, date: _})) => {
-                            // We might need to rotate the image
-                            let pixbuf = Rc::new(Pixbuf::from_file(path.to_str().unwrap()).unwrap());
-                            let new_pixbuf = match orientation {
-                                1 => {
-                                    Rc::clone(&pixbuf)
-                                }
-                                2 => {
-                                    Rc::new(pixbuf.flip(true).unwrap())
-                                },
-                                3 => {
-                                    Rc::new(pixbuf.rotate_simple(PixbufRotation::Upsidedown).unwrap())
-                                },
-                                4 => {
-                                    Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Upsidedown).unwrap())
-                                },
-                                5 => {
-                                    Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Clockwise).unwrap())
-                                },
-                                6 => {
-                                    Rc::new(pixbuf.rotate_simple(PixbufRotation::Clockwise).unwrap())
-                                },
-                                7 => {
-                                    Rc::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Counterclockwise).unwrap())
-                                },
-                                8 => {
-                                    Rc::new(pixbuf.rotate_simple(PixbufRotation::Counterclockwise).unwrap())
-                                },
-                                _ => Rc::clone(&pixbuf)
-                            };
-
-                            drop(pixbuf);
+                            let pixbuf = Arc::new(UnsafeSendSync::new(Pixbuf::from_file(path).unwrap()));
+                            let new_pixbuf = App::rotate_photo(pixbuf, orientation);
 
                             let mut address_message = Err("Not set".into());
                             if reverse_geocode {
                                 if let Some(location) = location {
+                                    debug!("Geolocating");
                                     let address = geocoder.reverse_geocode(location.0, location.1);
                                     address_message = address;
+                                    debug!("Finished geolocating");
                                 }
                             }
 
                             let photo_obj = MediaMessage::Photo {
                                 photo: media.unwrap().unwrap().clone(),
                                 photo_data: PhotoData {
-                                    bytes: Box::new(new_pixbuf.read_pixel_bytes().unwrap()),
-                                    colorspace: new_pixbuf.colorspace(),
-                                    has_alpha: new_pixbuf.has_alpha(),
-                                    bits_per_sample: new_pixbuf.bits_per_sample(),
-                                    width: new_pixbuf.width(),
-                                    height: new_pixbuf.height(),
-                                    rowstride: new_pixbuf.rowstride()
+                                    pixbuf: new_pixbuf.clone()
                                 },
                                 address: address_message
                             };
 
-                            drop(new_pixbuf);
 
-
-
+                            debug!("Sending photo to UI");
                             let res = media_sender.send(photo_obj);
                             if let Err(e) = res {
                                 println!("Failed to send photo_obj between threads {}", e);
                             }
-
                         },
                         Ok(Some(Media::Video { path: _ })) => {
                             let video_obj = MediaMessage::Video {
@@ -214,19 +180,17 @@ impl App {
                 None,
                 clone!(@weak overlay, @weak picture, @weak location_box, @weak location_label, @weak photo_location_label, @weak photo_date_label => @default-return Continue(false),
                     move |photo_obj| {
+
                         match photo_obj {
                             MediaMessage::Photo { photo, photo_data, address } => {
-                                let pixbuf = Box::new(Pixbuf::from_bytes(
-                                    &photo_data.bytes,
-                                    photo_data.colorspace,
-                                    photo_data.has_alpha,
-                                    photo_data.bits_per_sample,
-                                    photo_data.width,
-                                    photo_data.height,
-                                    photo_data.rowstride
-                                ));
+                                let span = span!(Level::TRACE, "show_picture_thread");
+                                let _enter = span.enter();
 
-                                picture.set_pixbuf(Some(&pixbuf));
+                                debug!("Recreating photo");
+
+                                picture.set_pixbuf(Some(photo_data.pixbuf.as_ref()));
+
+                                debug!("Done setting photo on screen");
 
                                 let mut location_found = false;
                                 let mut date_found = false;
@@ -259,6 +223,7 @@ impl App {
                                 } else {
                                     location_box.hide();
                                 }
+                                debug!("Done setting everything on screen");
                             },
 
                             MediaMessage::Video { video: video_file } => {
@@ -384,7 +349,7 @@ impl App {
 
     fn load_css() {
         let provider = CssProvider::new();
-        provider.load_from_data(include_bytes!("../style/style.css"));
+        provider.load_from_data("../style/style.css");
     
         StyleContext::add_provider_for_display(
             &Display::default().expect("Could not connect to a display"),
@@ -405,5 +370,40 @@ impl App {
 
     fn subscribe_mqtt(client: &mut Client, mqtt_topic: &String) {
         client.subscribe(mqtt_topic, QoS::AtMostOnce).unwrap();
+    }
+
+    fn rotate_photo(pixbuf: Arc<UnsafeSendSync<Pixbuf>>, orientation: u32) -> Arc<UnsafeSendSync<Pixbuf>> {
+        // We might need to rotate the image
+        debug!("Got pixels");
+        let new_pixbuf = match orientation {
+            1 => {
+                pixbuf
+            }
+            2 => {
+                Arc::new(UnsafeSendSync::new(pixbuf.flip(true).unwrap()))
+            },
+            3 => {
+                Arc::new(UnsafeSendSync::new(pixbuf.rotate_simple(PixbufRotation::Upsidedown).unwrap()))
+            },
+            4 => {
+                Arc::new(UnsafeSendSync::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Upsidedown).unwrap()))
+            },
+            5 => {
+                Arc::new(UnsafeSendSync::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Clockwise).unwrap()))
+            },
+            6 => {
+                Arc::new(UnsafeSendSync::new(pixbuf.rotate_simple(PixbufRotation::Clockwise).unwrap()))
+            },
+            7 => {
+                Arc::new(UnsafeSendSync::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Counterclockwise).unwrap()))
+            },
+            8 => {
+                Arc::new(UnsafeSendSync::new(pixbuf.rotate_simple(PixbufRotation::Counterclockwise).unwrap()))
+            },
+            _ => pixbuf
+        };
+        debug!("Flipped pixels");
+
+        return new_pixbuf;
     }
 }
