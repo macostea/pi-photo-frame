@@ -11,7 +11,7 @@ use gtk::gdk::Display;
 use gtk::gdk_pixbuf::{Pixbuf, PixbufRotation};
 use serde::Deserialize;
 use rumqttc::{MqttOptions, QoS, Client, Connection, Event::Incoming, Packet::Publish};
-use tracing::{span, Level, debug, instrument};
+use tracing::{span, Level, debug, warn, instrument};
 
 use crate::photo::MediaProvider;
 use crate::geocoder::Geocoder;
@@ -127,7 +127,12 @@ impl App {
                     debug!("Got media");
                     match media {
                         Ok(Some(Media::Photo { ref path, orientation, location, date: _})) => {
-                            let pixbuf = Arc::new(UnsafeSendSync::new(Pixbuf::from_file(path).unwrap()));
+                            let image_data = Pixbuf::from_file(path);
+                            if let Err(err) = image_data {
+                                warn!("Loading image failed {:?}", err);
+                                return;
+                            }
+                            let pixbuf = Arc::new(UnsafeSendSync::new(image_data.unwrap()));
                             let new_pixbuf = App::rotate_photo(pixbuf, orientation);
 
                             let mut address_message = Err("Not set".into());
