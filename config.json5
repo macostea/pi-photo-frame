@@ -1,14 +1,12 @@
 {
-    paths: [
-        ""
-    ],
-    // Transition time in seconds
-    transition_time: 15,
-    // Use mqtt to start/stop the slideshow
-    mqtt: true,
-    mqtt_topic: "",
-    mqtt_host: "",
+  paths: [""],
+  // Transition time in seconds
+  transition_time: 15,
+  // Use mqtt to start/stop the slideshow
+  mqtt: true,
+  mqtt_topic: "",
+  mqtt_host: "",
 
-    reverse_geocode: true,
-    mapbox_api_key: "",
+  reverse_geocode: true,
+  mapbox_api_key: "",
 }

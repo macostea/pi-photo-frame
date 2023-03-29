@@ -1,13 +1,13 @@
-use std::{fs, path::Path, io};
+use std::{fs, io, path::Path};
 
 mod controllers;
 
 use controllers::application::{App, Config};
 use tracing::Level;
 
-mod photo;
 mod geocoder;
 mod gui;
+mod photo;
 mod utils;
 
 fn load_config() -> Config {
@@ -22,8 +22,11 @@ fn main() {
     let config = load_config();
     let mut app = App::new();
 
-    tracing_subscriber::fmt().with_max_level(Level::DEBUG).with_writer(io::stdout).init();
-    
+    tracing_subscriber::fmt()
+        .with_max_level(Level::DEBUG)
+        .with_writer(io::stdout)
+        .init();
+
     app.build_application(config);
 
     app.run();

@@ -1,8 +1,12 @@
-use std::{fs::{self, ReadDir}, io, path::PathBuf};
+use std::{
+    fs::{self, ReadDir},
+    io,
+    path::PathBuf,
+};
 
-use exif::{Tag, In, Value, DateTime};
+use exif::{DateTime, In, Tag, Value};
 use rand::prelude::*;
-use tracing::{instrument, debug};
+use tracing::{debug, instrument};
 
 #[derive(Clone, Debug)]
 pub enum Media {
@@ -13,8 +17,8 @@ pub enum Media {
         date: Option<String>,
     },
     Video {
-        path: PathBuf
-    }
+        path: PathBuf,
+    },
 }
 
 #[derive(Default, Debug)]
@@ -29,11 +33,7 @@ impl MediaProvider {
     pub fn new(paths: Vec<String>) -> Self {
         MediaProvider {
             paths,
-            photo_valid_extensions: vec![
-                "jpg".to_string(),
-                "jpeg".to_string(),
-                "png".to_string(),
-            ],
+            photo_valid_extensions: vec!["jpg".to_string(), "jpeg".to_string(), "png".to_string()],
             video_valid_extensions: vec![
                 // "mov".to_string(),
                 // "mp4".to_string(),
@@ -54,20 +54,30 @@ impl MediaProvider {
         let exifreader = exif::Reader::new();
 
         for t in 0..5 {
-            debug!(current_try=t, "Trying to get a valid photo");
+            debug!(current_try = t, "Trying to get a valid photo");
             let dir = fs::read_dir(self.paths[index].clone())?;
-            let all_extensions = self.photo_valid_extensions.iter().cloned().chain(self.video_valid_extensions.iter().cloned()).collect();
+            let all_extensions = self
+                .photo_valid_extensions
+                .iter()
+                .cloned()
+                .chain(self.video_valid_extensions.iter().cloned())
+                .collect();
 
             let random_media_path = MediaProvider::get_random_entry(dir, all_extensions)?;
             let random_media_path_clone = random_media_path.clone();
 
             let extension = random_media_path.extension().unwrap().to_str().unwrap();
 
-            if self.photo_valid_extensions.contains(&extension.to_lowercase()) {
+            if self
+                .photo_valid_extensions
+                .contains(&extension.to_lowercase())
+            {
                 debug!("Found a valid photo");
                 let file = fs::File::open(random_media_path)?;
                 let mut bufreader = std::io::BufReader::new(&file);
-                let exif = exifreader.read_from_container(&mut bufreader).map_err(|e| io::Error::new(io::ErrorKind::Other, e));
+                let exif = exifreader
+                    .read_from_container(&mut bufreader)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
 
                 if exif.is_err() {
                     debug!("No exif data");
@@ -82,48 +92,42 @@ impl MediaProvider {
                 let exif_obj = exif.unwrap();
 
                 let orientation = match exif_obj.get_field(Tag::Orientation, In::PRIMARY) {
-                    Some(orientation) => {
-                        match orientation.value.get_uint(0) {
-                            Some(v @ 1..=8) => v,
-                            _ => 1
-                        }
+                    Some(orientation) => match orientation.value.get_uint(0) {
+                        Some(v @ 1..=8) => v,
+                        _ => 1,
                     },
-                    None => 1
+                    None => 1,
                 };
                 debug!(orientation, "Found orientation");
 
                 let latitude = match exif_obj.get_field(Tag::GPSLatitude, In::PRIMARY) {
-                    Some(latitude) => {
-                        match latitude.value {
-                            Value::Rational(ref v) if !v.is_empty() => Some(v),
-                            _ => None
-                        }
+                    Some(latitude) => match latitude.value {
+                        Value::Rational(ref v) if !v.is_empty() => Some(v),
+                        _ => None,
                     },
-                    None => None
+                    None => None,
                 };
 
                 let longitude = match exif_obj.get_field(Tag::GPSLongitude, In::PRIMARY) {
-                    Some(longitude) => {
-                        match longitude.value {
-                            Value::Rational(ref v) if !v.is_empty() => Some(v),
-                            _ => None
-                        }
+                    Some(longitude) => match longitude.value {
+                        Value::Rational(ref v) if !v.is_empty() => Some(v),
+                        _ => None,
                     },
-                    None => None
+                    None => None,
                 };
 
                 let mut location: Option<(f32, f32)> = None;
 
                 if let Some(lat) = latitude {
                     if let Some(lon) = longitude {
-                        let lat_dec: f32 = lat[0].num as f32 / lat[0].denom as f32 +
-                            (lat[1].num as f32 / lat[1].denom as f32) / 60.0 +
-                            (lat[2].num as f32 / lat[2].denom as f32) / 3600.0;
+                        let lat_dec: f32 = lat[0].num as f32 / lat[0].denom as f32
+                            + (lat[1].num as f32 / lat[1].denom as f32) / 60.0
+                            + (lat[2].num as f32 / lat[2].denom as f32) / 3600.0;
                         debug!(lat_dec, "Found latitude");
 
-                        let lon_dec: f32 = lon[0].num as f32 / lon[0].denom as f32 +
-                            (lon[1].num as f32 / lon[1].denom as f32) / 60.0 +
-                            (lon[2].num as f32 / lon[2].denom as f32) / 3600.0;
+                        let lon_dec: f32 = lon[0].num as f32 / lon[0].denom as f32
+                            + (lon[1].num as f32 / lon[1].denom as f32) / 60.0
+                            + (lon[2].num as f32 / lon[2].denom as f32) / 3600.0;
                         debug!(lon_dec, "Found longitude");
 
                         location = Some((lat_dec, lon_dec));
@@ -131,13 +135,11 @@ impl MediaProvider {
                 }
 
                 let date_time = match exif_obj.get_field(Tag::DateTime, In::PRIMARY) {
-                    Some(date_time) => {
-                        match date_time.value {
-                            Value::Ascii(ref v) if !v.is_empty() => Some(v),
-                            _ => None
-                        }
+                    Some(date_time) => match date_time.value {
+                        Value::Ascii(ref v) if !v.is_empty() => Some(v),
+                        _ => None,
                     },
-                    None => None
+                    None => None,
                 };
 
                 let mut string_date_time: Option<String> = None;
@@ -157,11 +159,16 @@ impl MediaProvider {
                     date: string_date_time,
                 }));
             } else {
-                return Ok(Some(Media::Video { path: random_media_path }));
+                return Ok(Some(Media::Video {
+                    path: random_media_path,
+                }));
             }
         }
 
-        return Err(io::Error::new(io::ErrorKind::NotFound, "No valid photo found"))
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "No valid photo found",
+        ));
     }
 
     #[instrument]
@@ -171,7 +178,7 @@ impl MediaProvider {
         let entry = dir.choose(&mut rng);
         if let Some(entry) = entry {
             let entry = entry?;
-            debug!(current_entry=entry.path().to_str(), "Trying an entry");
+            debug!(current_entry = entry.path().to_str(), "Trying an entry");
             if entry.path().is_dir() {
                 if let Some(dir) = fs::read_dir(entry.path()).ok() {
                     println!("Dir found, recursing: {:?}", dir);
@@ -191,6 +198,9 @@ impl MediaProvider {
             println!("Invalid extension: {:?}", entry.path());
         }
 
-        Err(io::Error::new(io::ErrorKind::NotFound, "No valid photo found"))
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "No valid photo found",
+        ))
     }
 }

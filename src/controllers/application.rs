@@ -1,21 +1,21 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use std::sync::{Arc, Mutex};
 
-use gtk::glib::{self, timeout_future_seconds, PRIORITY_DEFAULT};
-use gtk::glib::{MainContext, clone};
-use gtk::{prelude::*, CssProvider, StyleContext, Application, MediaFile};
 use gtk::gdk::Display;
 use gtk::gdk_pixbuf::{Pixbuf, PixbufRotation};
+use gtk::glib::{self, timeout_future_seconds, PRIORITY_DEFAULT};
+use gtk::glib::{clone, MainContext};
+use gtk::{prelude::*, Application, CssProvider, MediaFile, StyleContext};
+use rumqttc::{Client, Connection, Event::Incoming, MqttOptions, Packet::Publish, QoS};
 use serde::Deserialize;
-use rumqttc::{MqttOptions, QoS, Client, Connection, Event::Incoming, Packet::Publish};
-use tracing::{span, Level, debug, warn, instrument};
+use tracing::{debug, instrument, span, warn, Level};
 
-use crate::photo::MediaProvider;
 use crate::geocoder::Geocoder;
 use crate::photo::Media;
+use crate::photo::MediaProvider;
 
 use crate::gui::main_view::MainView;
 use crate::utils::unsafe_wrapper::UnsafeSendSync;
@@ -45,12 +45,12 @@ enum MediaMessage {
         address: Result<String, String>,
     },
     Video {
-        video: Media
-    }
+        video: Media,
+    },
 }
 
 struct PhotoData {
-    pixbuf: Arc<UnsafeSendSync<Pixbuf>>
+    pixbuf: Arc<UnsafeSendSync<Pixbuf>>,
 }
 
 impl App {
@@ -80,7 +80,7 @@ impl App {
         let mqtt_topic = self.config.mqtt_topic.clone();
         let reverse_geocode = self.config.reverse_geocode.clone();
         let mapbox_api_key = self.config.mapbox_api_key.clone();
-    
+
         app.connect_startup(|_| App::load_css());
         app.connect_activate(move |app| {
             main_view.borrow_mut().build_main_view(&app);
@@ -343,7 +343,7 @@ impl App {
                 }
             }));
         });
-    
+
         self.gtk_application = Some(app);
     }
 
@@ -355,7 +355,7 @@ impl App {
     fn load_css() {
         let provider = CssProvider::new();
         provider.load_from_data(include_str!("../style/style.css"));
-    
+
         StyleContext::add_provider_for_display(
             &Display::default().expect("Could not connect to a display"),
             &provider,
@@ -367,7 +367,7 @@ impl App {
         let mut mqtt_options = MqttOptions::new("pi-photo-frame", mqtt_host, 1883);
         mqtt_options.set_keep_alive(Duration::from_secs(5));
         mqtt_options.set_clean_session(false);
-        
+
         let (client, connection) = Client::new(mqtt_options, 10);
 
         return (client, connection);
@@ -377,38 +377,31 @@ impl App {
         client.subscribe(mqtt_topic, QoS::AtMostOnce).unwrap();
     }
 
-    fn rotate_photo(pixbuf: Arc<UnsafeSendSync<Pixbuf>>, orientation: u32) -> Arc<UnsafeSendSync<Pixbuf>> {
+    fn rotate_photo(
+        pixbuf: Arc<UnsafeSendSync<Pixbuf>>,
+        orientation: u32,
+    ) -> Arc<UnsafeSendSync<Pixbuf>> {
         // We might need to rotate the image
         debug!("Got pixels");
         let new_pixbuf = match orientation {
-            1 => {
-                pixbuf
-            }
-            2 => {
-                Arc::new(UnsafeSendSync::new(pixbuf.flip(true).unwrap()))
-            },
-            3 => {
-                Arc::new(UnsafeSendSync::new(pixbuf.rotate_simple(PixbufRotation::Upsidedown).unwrap()))
-            },
-            4 => {
-                Arc::new(UnsafeSendSync::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Upsidedown).unwrap()))
-            },
-            5 => {
-                Arc::new(UnsafeSendSync::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Clockwise).unwrap()))
-            },
-            6 => {
-                Arc::new(UnsafeSendSync::new(pixbuf.rotate_simple(PixbufRotation::Clockwise).unwrap()))
-            },
-            7 => {
-                Arc::new(UnsafeSendSync::new(pixbuf.flip(true).unwrap().rotate_simple(PixbufRotation::Counterclockwise).unwrap()))
-            },
-            8 => {
-                Arc::new(UnsafeSendSync::new(pixbuf.rotate_simple(PixbufRotation::Counterclockwise).unwrap()))
-            },
-            _ => pixbuf
+            1 => None,
+            2 => pixbuf.flip(true),
+            3 => pixbuf.rotate_simple(PixbufRotation::Upsidedown),
+            4 => pixbuf
+                .flip(true)
+                .map_or(None, |p| p.rotate_simple(PixbufRotation::Upsidedown)),
+            5 => pixbuf
+                .flip(true)
+                .map_or(None, |p| p.rotate_simple(PixbufRotation::Clockwise)),
+            6 => pixbuf.rotate_simple(PixbufRotation::Clockwise),
+            7 => pixbuf
+                .flip(true)
+                .map_or(None, |p| p.rotate_simple(PixbufRotation::Counterclockwise)),
+            8 => pixbuf.rotate_simple(PixbufRotation::Counterclockwise),
+            _ => None,
         };
         debug!("Flipped pixels");
 
-        return new_pixbuf;
+        new_pixbuf.map_or(pixbuf, |p| Arc::new(UnsafeSendSync::new(p)))
     }
 }

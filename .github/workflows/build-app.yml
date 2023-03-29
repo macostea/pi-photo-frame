@@ -2,25 +2,24 @@ name: Docker Image CI
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   workflow_dispatch:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-    - name: Run the build
-      run: docker run --rm -v `pwd`:/builder mcostea/pi-photo-frame-builder
+      - name: Run the build
+        run: docker run --rm -v `pwd`:/builder mcostea/pi-photo-frame-builder
 
-    - name: Create package
-      run: tar -czvf pi-photo-builder.tar.gz target/aarch64-unknown-linux-gnu/debian/*
+      - name: Create package
+        run: tar -czvf pi-photo-builder.tar.gz target/aarch64-unknown-linux-gnu/debian/*
 
-    - name: Upload
-      uses: actions/upload-artifact@v3
-      with: 
-        name: pi-photo-frame
-        path: pi-photo-builder.tar.gz
+      - name: Upload
+        uses: actions/upload-artifact@v3
+        with:
+          name: pi-photo-frame
+          path: pi-photo-builder.tar.gz
