@@ -132,7 +132,14 @@ impl App {
                                 warn!("Loading image failed {:?}", err);
                                 return;
                             }
+
                             let pixbuf = Arc::new(UnsafeSendSync::new(image_data.unwrap()));
+
+                            if pixbuf.height() <= 0 || pixbuf.width() <= 0 {
+                                warn!("Corrupted image {:?}", path);
+                                return;
+                            }
+
                             let new_pixbuf = App::rotate_photo(pixbuf, orientation);
 
                             let mut address_message = Err("Not set".into());

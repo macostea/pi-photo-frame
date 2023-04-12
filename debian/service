@@ -5,11 +5,11 @@ StartLimitIntervalSec=0
 
 [Service]
 Environment="DISPLAY=:0"
-Environment="XAUTHORITY=/home/pi/.Xauthority"
+Environment="XAUTHORITY=/home/mihai/.Xauthority"
 Type=simple
 Restart=always
 RestartSec=1
-User=pi
+User=mihai
 ExecStart=/usr/bin/photo-frame
 
 [Install]
