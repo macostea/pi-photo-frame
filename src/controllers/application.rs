@@ -288,7 +288,7 @@ impl App {
                                     let payload = String::from_utf8(notification.payload[..].to_vec()).unwrap();
                                     let power = if payload == "1" {"0"} else {"1"};
                                     println!("Received MQTT notification {}", payload);
-                                    let err = run_script::run_script!(format!("echo {} | sudo tee /sys/class/backlight/rpi_backlight/bl_power", power));
+                                    let err = run_script::run_script!(format!("echo {} | sudo tee /sys/class/backlight/*/bl_power", power));
                                     if err.is_err() {
                                         println!("Failed to switch lcd display");
                                     }
