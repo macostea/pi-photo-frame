@@ -412,8 +412,11 @@ impl App {
             8 => pixbuf.rotate_simple(PixbufRotation::Counterclockwise),
             _ => None,
         };
-        debug!("Flipped pixels");
+        debug!("Done flipping pixels");
 
-        new_pixbuf.map_or(pixbuf, |p| Arc::new(UnsafeSendSync::new(p)))
+        new_pixbuf.map_or(pixbuf, |p| {
+            debug!("Flipped pixels");
+            Arc::new(UnsafeSendSync::new(p))
+        })
     }
 }
