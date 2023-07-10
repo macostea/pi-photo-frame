@@ -142,6 +142,11 @@ impl App {
 
                             let new_pixbuf = App::rotate_photo(pixbuf, orientation);
 
+                            if new_pixbuf.height() <= 0 || new_pixbuf.width() <= 0 {
+                                warn!("Corrupted image after rotation {:?}", path);
+                                return;
+                            }
+
                             let mut address_message = Err("Not set".into());
                             if reverse_geocode {
                                 if let Some(location) = location {
