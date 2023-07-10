@@ -9,4 +9,5 @@
 
   reverse_geocode: true,
   mapbox_api_key: "",
+  sentry_uri: "",
 }

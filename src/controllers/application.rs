@@ -29,6 +29,7 @@ pub struct Config {
     mqtt_topic: String,
     reverse_geocode: bool,
     mapbox_api_key: String,
+    pub sentry_uri: String,
 }
 
 #[derive(Debug)]
@@ -64,6 +65,11 @@ impl App {
 
     #[instrument]
     pub fn build_application(&mut self, config: Config) {
+        let _guard = sentry::init((config.sentry_uri.clone(), sentry::ClientOptions {
+            release: sentry::release_name!(),
+            ..Default::default()
+        }));
+
         self.config = config;
 
         let media_provider = Arc::new(Mutex::new(MediaProvider::new(self.config.paths.clone())));
