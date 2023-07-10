@@ -20,6 +20,10 @@ fn load_config() -> Config {
 
 fn main() {
     let config = load_config();
+    let _guard = sentry::init((config.sentry_uri.clone(), sentry::ClientOptions {
+        release: sentry::release_name!(),
+        ..Default::default()
+    }));
     let mut app = App::new();
 
     tracing_subscriber::fmt()
