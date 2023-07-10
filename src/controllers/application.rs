@@ -218,7 +218,7 @@ impl App {
                                         location_label.set_text(format!("{}", a).as_str());
                                     },
                                     Err(e) => {
-                                        location_label.set_text("");
+                                        location_label.set_text("   ");
                                         println!("Failed to get reverse geocode response, {}", e);
                                     }
                                 }
@@ -228,7 +228,7 @@ impl App {
                                         date_found = true;
                                         photo_date_label.set_text(string_date.as_str());
                                     } else {
-                                        photo_date_label.set_text("");
+                                        photo_date_label.set_text("   ");
                                     }
 
                                     photo_location_label.set_text(format!("{}", path.to_str().unwrap()).as_str());
