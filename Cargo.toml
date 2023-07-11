@@ -26,6 +26,10 @@ conf-files = [
 [package.metadata.deb.systemd-units]
 start = false
 
+[profile.release-with-debug]
+inherits = "release"
+debug = true
+
 [dependencies]
 gtk = { version = "0.6.2", package = "gtk4", features = ["v4_6"] }
 serde = { version = "1.0", features = ["derive"] }
