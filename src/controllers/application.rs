@@ -130,28 +130,28 @@ impl App {
                             let image_data = Pixbuf::from_file(path);
                             if let Err(err) = image_data {
                                 warn!("Loading image failed {:?}", err);
-                                return;
+                                continue;
                             }
 
                             let pixbuf = image_data.unwrap();
 
                             if pixbuf.height() <= 0 || pixbuf.width() <= 0 {
                                 warn!("Corrupted image {:?}", path);
-                                return;
+                                continue;
                             }
 
                             let new_pixbuf = App::rotate_photo(pixbuf, orientation);
 
                             if new_pixbuf.height() <= 0 || new_pixbuf.width() <= 0 {
                                 warn!("Corrupted image after rotation {:?}", path);
-                                return;
+                                continue;
                             }
 
                             let texture = Texture::for_pixbuf(&new_pixbuf);
                             debug!("Image sizes: {:?}, {:?}", texture.width(), texture.height());
                             if texture.height() <= 0 || texture.width() <= 0 {
                                 warn!("Corrupted image after creating texture {:?}", path);
-                                return;
+                                continue;
                             }
 
                             let mut address_message = Err("Not set".into());
