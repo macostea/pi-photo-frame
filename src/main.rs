@@ -10,6 +10,14 @@ mod gui;
 mod photo;
 mod utils;
 
+#[cfg(feature = "sentry-native")]
+#[link(name = "sentrysample", kind = "dylib")]
+#[link(name = "sentry", kind = "dylib")]
+
+extern "C" {
+    fn init_native();
+}
+
 fn load_config() -> Config {
     let mut path = Path::new("config.json5");
     if !path.exists() {
@@ -19,7 +27,19 @@ fn load_config() -> Config {
 }
 
 fn main() {
+    #[cfg(feature = "sentry-native")]
+    unsafe {
+        init_native();
+    }
+
     let config = load_config();
+    let _guard = sentry::init((
+        config.sentry_uri.clone(),
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            ..Default::default()
+        },
+    ));
     let mut app = App::new();
 
     tracing_subscriber::fmt()

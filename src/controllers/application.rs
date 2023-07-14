@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use gtk::gdk::Display;
+use gtk::gdk::{Display, Texture};
 use gtk::gdk_pixbuf::{Pixbuf, PixbufRotation};
 use gtk::glib::{self, timeout_future_seconds, PRIORITY_DEFAULT};
 use gtk::glib::{clone, MainContext};
@@ -18,7 +18,6 @@ use crate::photo::Media;
 use crate::photo::MediaProvider;
 
 use crate::gui::main_view::MainView;
-use crate::utils::unsafe_wrapper::UnsafeSendSync;
 
 #[derive(Deserialize, Default, Debug)]
 pub struct Config {
@@ -29,6 +28,7 @@ pub struct Config {
     mqtt_topic: String,
     reverse_geocode: bool,
     mapbox_api_key: String,
+    pub sentry_uri: String,
 }
 
 #[derive(Debug)]
@@ -50,7 +50,7 @@ enum MediaMessage {
 }
 
 struct PhotoData {
-    pixbuf: Arc<UnsafeSendSync<Pixbuf>>,
+    texture: Texture,
 }
 
 impl App {
@@ -130,17 +130,29 @@ impl App {
                             let image_data = Pixbuf::from_file(path);
                             if let Err(err) = image_data {
                                 warn!("Loading image failed {:?}", err);
-                                return;
+                                continue;
                             }
 
-                            let pixbuf = Arc::new(UnsafeSendSync::new(image_data.unwrap()));
+                            let pixbuf = image_data.unwrap();
 
                             if pixbuf.height() <= 0 || pixbuf.width() <= 0 {
                                 warn!("Corrupted image {:?}", path);
-                                return;
+                                continue;
                             }
 
                             let new_pixbuf = App::rotate_photo(pixbuf, orientation);
+
+                            if new_pixbuf.height() <= 0 || new_pixbuf.width() <= 0 {
+                                warn!("Corrupted image after rotation {:?}", path);
+                                continue;
+                            }
+
+                            let texture = Texture::for_pixbuf(&new_pixbuf);
+                            debug!("Image sizes: {:?}, {:?}", texture.width(), texture.height());
+                            if texture.height() <= 0 || texture.width() <= 0 {
+                                warn!("Corrupted image after creating texture {:?}", path);
+                                continue;
+                            }
 
                             let mut address_message = Err("Not set".into());
                             if reverse_geocode {
@@ -155,7 +167,7 @@ impl App {
                             let photo_obj = MediaMessage::Photo {
                                 photo: media.unwrap().unwrap().clone(),
                                 photo_data: PhotoData {
-                                    pixbuf: new_pixbuf.clone()
+                                    texture,
                                 },
                                 address: address_message
                             };
@@ -200,7 +212,7 @@ impl App {
 
                                 debug!("Recreating photo");
 
-                                picture.set_pixbuf(Some(photo_data.pixbuf.as_ref()));
+                                picture.set_paintable(Some(&photo_data.texture));
 
                                 debug!("Done setting photo on screen");
 
@@ -213,7 +225,7 @@ impl App {
                                         location_label.set_text(format!("{}", a).as_str());
                                     },
                                     Err(e) => {
-                                        location_label.set_text("");
+                                        location_label.set_text("   ");
                                         println!("Failed to get reverse geocode response, {}", e);
                                     }
                                 }
@@ -223,11 +235,10 @@ impl App {
                                         date_found = true;
                                         photo_date_label.set_text(string_date.as_str());
                                     } else {
-                                        photo_date_label.set_text("");
+                                        photo_date_label.set_text("   ");
                                     }
 
                                     photo_location_label.set_text(format!("{}", path.to_str().unwrap()).as_str());
-
                                 }
 
                                 if location_found || date_found {
@@ -384,10 +395,7 @@ impl App {
         client.subscribe(mqtt_topic, QoS::AtMostOnce).unwrap();
     }
 
-    fn rotate_photo(
-        pixbuf: Arc<UnsafeSendSync<Pixbuf>>,
-        orientation: u32,
-    ) -> Arc<UnsafeSendSync<Pixbuf>> {
+    fn rotate_photo(pixbuf: Pixbuf, orientation: u32) -> Pixbuf {
         // We might need to rotate the image
         debug!("Got pixels");
         let new_pixbuf = match orientation {
@@ -407,8 +415,11 @@ impl App {
             8 => pixbuf.rotate_simple(PixbufRotation::Counterclockwise),
             _ => None,
         };
-        debug!("Flipped pixels");
+        debug!("Done flipping pixels");
 
-        new_pixbuf.map_or(pixbuf, |p| Arc::new(UnsafeSendSync::new(p)))
+        new_pixbuf.map_or(pixbuf, |p| {
+            debug!("Flipped pixels");
+            p
+        })
     }
 }

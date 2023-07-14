@@ -26,6 +26,10 @@ conf-files = [
 [package.metadata.deb.systemd-units]
 start = false
 
+[profile.release-with-debug]
+inherits = "release"
+debug = true
+
 [dependencies]
 gtk = { version = "0.6.2", package = "gtk4", features = ["v4_6"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -37,3 +41,7 @@ kamadak-exif = "0.5.4"
 reqwest = { version = "0.11", features = ["json", "blocking"] }
 tracing = "0.1"
 tracing-subscriber = "0.3.16"
+sentry = "0.31.5"
+
+[features]
+sentry-native = []
