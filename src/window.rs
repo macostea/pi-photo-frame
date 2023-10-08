@@ -70,7 +70,13 @@ mod imp {
               obj.start_timer().await;
             }));
 
-            // obj.start_worker_thread();
+            self.play_pause_button.connect_notify_local(
+                Some("is-paused"),
+                clone!(@weak obj => move |button, _| {
+                    let is_paused = button.is_paused();
+                    obj.handle_play_pause_toggled(is_paused);
+                }),
+            );
         }
     }
     impl WindowImpl for PpfWindow {}
@@ -148,86 +154,86 @@ impl PpfWindow {
         let this = self;
 
         media_receiver.attach(None, clone!(@weak this => @default-return Continue(false), move |photo_obj| {
-      match photo_obj {
-        MediaMessage::Photo { photo, photo_data, address } => {
-          let span = span!(Level::TRACE, "show_picture_thread");
-          let _enter = span.enter();
+          match photo_obj {
+            MediaMessage::Photo { photo, photo_data, address } => {
+              let span = span!(Level::TRACE, "show_picture_thread");
+              let _enter = span.enter();
 
-          debug!("Recreating photo");
+              debug!("Recreating photo");
 
-          this.imp().picture.set_pixbuf(Some(photo_data.pixbuf.as_ref()));
+              this.imp().picture.set_pixbuf(Some(photo_data.pixbuf.as_ref()));
 
-          debug!("Done setting photo on screen");
+              debug!("Done setting photo on screen");
 
-          let mut location_found = false;
-          let mut date_found = false;
+              let mut location_found = false;
+              let mut date_found = false;
 
-          match address {
-              Ok(a) => {
-                  location_found = true;
-                  this.imp().location_label.set_text(format!("{}", a).as_str());
-              },
-              Err(e) => {
-                  this.imp().location_label.set_text("");
-                  println!("Failed to get reverse geocode response, {}", e);
+              match address {
+                  Ok(a) => {
+                      location_found = true;
+                      this.imp().location_label.set_text(format!("{}", a).as_str());
+                  },
+                  Err(e) => {
+                      this.imp().location_label.set_text("");
+                      println!("Failed to get reverse geocode response, {}", e);
+                  }
               }
-          }
 
-          if let Media::Photo { path, orientation: _, location: _, date } = photo {
-              if let Some(string_date) = date {
-                  date_found = true;
-                  this.imp().photo_date_label.set_text(string_date.as_str());
+              if let Media::Photo { path, orientation: _, location: _, date } = photo {
+                  if let Some(string_date) = date {
+                      date_found = true;
+                      this.imp().photo_date_label.set_text(string_date.as_str());
+                  } else {
+                      this.imp().photo_date_label.set_text("");
+                  }
+
+                  this.imp().photo_location_label.set_text(format!("{}", path.to_str().unwrap()).as_str());
+              }
+
+              if location_found || date_found {
+                  this.imp().location_box.show();
               } else {
-                  this.imp().photo_date_label.set_text("");
+                  this.imp().location_box.hide();
               }
+              debug!("Done setting everything on screen");
+            },
+            MediaMessage::Video { video: video_file } => {
+              if let Media::Video { path } = video_file {
+                  println!("Got a video, trying to play it {}", path.to_str().unwrap());
+                  let media_file = MediaFile::new();
+                  let file = gtk::gio::File::for_path(path);
+                  media_file.set_file(Some(&file));
 
-              this.imp().photo_location_label.set_text(format!("{}", path.to_str().unwrap()).as_str());
-          }
-
-          if location_found || date_found {
-              this.imp().location_box.show();
-          } else {
-              this.imp().location_box.hide();
-          }
-          debug!("Done setting everything on screen");
-        },
-        MediaMessage::Video { video: video_file } => {
-          if let Media::Video { path } = video_file {
-              println!("Got a video, trying to play it {}", path.to_str().unwrap());
-              let media_file = MediaFile::new();
-              let file = gtk::gio::File::for_path(path);
-              media_file.set_file(Some(&file));
-
-              media_file.connect_playing_notify(
-                  move |media_file| {
-                      println!("Media is playing: {}", media_file.is_playing());
-                  }
-              );
-              media_file.connect_error_notify(
-                  move |media_file| {
-                      let error = media_file.error().unwrap();
-                      println!("Error in MediaFile: {}", error);
-                  }
-              );
-              media_file.connect_prepared_notify(
-                  move |media_file| {
-                      if media_file.error().is_some() {
-                          return;
+                  media_file.connect_playing_notify(
+                      move |media_file| {
+                          println!("Media is playing: {}", media_file.is_playing());
                       }
-                      if !media_file.has_video() {
-                          println!("Media is not a valid video file");
-                          return;
+                  );
+                  media_file.connect_error_notify(
+                      move |media_file| {
+                          let error = media_file.error().unwrap();
+                          println!("Error in MediaFile: {}", error);
                       }
-                  }
-              );
+                  );
+                  media_file.connect_prepared_notify(
+                      move |media_file| {
+                          if media_file.error().is_some() {
+                              return;
+                          }
+                          if !media_file.has_video() {
+                              println!("Media is not a valid video file");
+                              return;
+                          }
+                      }
+                  );
 
-              this.imp().picture.set_paintable(Some(&media_file));
-              media_file.play();
+                  this.imp().picture.set_paintable(Some(&media_file));
+                  media_file.play();
+              }
+            }
           }
-        }
-      }
-      Continue(true)
-    }));
+          Continue(true)
+      }));
 
         let config = self.imp().config.borrow();
         let mqtt_host = config.mqtt_host.clone();
@@ -273,7 +279,6 @@ impl PpfWindow {
             receiver.attach(
                 None,
                 clone!(@weak this => @default-return Continue(false), move |is_paused| {
-                  media_provider.clone().borrow().lock().unwrap().paused = is_paused;
                   this.imp().play_pause_button.set_property("is-paused", is_paused);
 
                   if !is_paused {

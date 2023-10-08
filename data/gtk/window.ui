@@ -80,14 +80,13 @@
               <object class="PpfPlayPauseButton" id="play_pause_button">
                 <property name="halign">start</property>
                 <property name="valign">center</property>
-
-                <signal name="toggled" handler="handle_play_pause_toggled" swapped="true" />
               </object>
             </child>
             <child>
               <object class="GtkLabel" id="photo_location_label">
                 <property name="halign">start</property>
                 <property name="label">photo location</property>
+                <property name="visible">false</property>
                 <style>
                   <class name="photo-location-label" />
                 </style>
