@@ -1,7 +1,7 @@
 use crate::gui::play_pause_button::PpfPlayPauseButton;
 use crate::photo::provider::{Config, MediaMessage};
 use crate::photo::{Media, MediaProvider};
-use crate::spawn;
+use crate::{spawn, spawn_tokio};
 use gtk::glib::{MainContext, PRIORITY_DEFAULT};
 use gtk::MediaFile;
 use gtk::{gio, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
@@ -9,10 +9,9 @@ use gtk::{
     glib::{clone, timeout_future_seconds},
     Label,
 };
-use rumqttc::{Client, Connection, Event::Incoming, MqttOptions, Packet::Publish, QoS};
+use rumqttc::{Event::Incoming, MqttOptions, Packet::Publish, QoS};
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::Duration;
 use tracing::{debug, span, Level};
 
@@ -238,16 +237,20 @@ impl PpfWindow {
         let config = self.imp().config.borrow();
         let mqtt_host = config.mqtt_host.clone();
         let mqtt_topic = config.mqtt_topic.clone();
+        let mqtt_topic_clone = mqtt_topic.clone();
         if config.mqtt {
             let (sender, receiver) = MainContext::channel::<bool>(PRIORITY_DEFAULT);
-            thread::spawn(move || {
-                let mqtt_topic_clone = mqtt_topic.clone();
-                let (mut client, mut connection) = PpfWindow::connect_mqtt(mqtt_host);
-                PpfWindow::subscribe_mqtt(&mut client, &mqtt_topic);
+            let (mut client, mut eventloop) = PpfWindow::connect_mqtt_async(mqtt_host.clone());
 
-                for (_, notification) in connection.iter().enumerate() {
+            spawn_tokio!(async move {
+                PpfWindow::subscribe_mqtt_async(&mut client, &mqtt_topic).await;
+            });
+
+            spawn_tokio!(async move {
+                while let Ok(notification) = eventloop.poll().await {
+                    println!("Event = {notification:?}");
                     match notification {
-                        Ok(Incoming(Publish(notification))) => {
+                        Incoming(Publish(notification)) => {
                             if notification.topic == mqtt_topic_clone {
                                 let payload =
                                     String::from_utf8(notification.payload[..].to_vec()).unwrap();
@@ -268,9 +271,6 @@ impl PpfWindow {
                                 }
                             }
                         }
-                        Ok(Incoming(rumqttc::Packet::ConnAck(_))) => {
-                            PpfWindow::subscribe_mqtt(&mut client, &mqtt_topic);
-                        }
                         _ => {}
                     }
                 }
@@ -290,17 +290,17 @@ impl PpfWindow {
         }
     }
 
-    fn connect_mqtt(mqtt_host: String) -> (Client, Connection) {
-        let mut mqtt_options = MqttOptions::new("pi-photo-frame", mqtt_host, 1883);
+    fn connect_mqtt_async(mqtt_host: String) -> (rumqttc::AsyncClient, rumqttc::EventLoop) {
+        let mut mqtt_options = MqttOptions::new("pi-photo-frame-2", mqtt_host, 1883);
         mqtt_options.set_keep_alive(Duration::from_secs(5));
-        mqtt_options.set_clean_session(false);
+        // mqtt_options.set_clean_session(false);
 
-        let (client, connection) = Client::new(mqtt_options, 10);
+        let (client, eventloop) = rumqttc::AsyncClient::new(mqtt_options, 10);
 
-        return (client, connection);
+        return (client, eventloop)
     }
 
-    fn subscribe_mqtt(client: &mut Client, mqtt_topic: &String) {
-        client.subscribe(mqtt_topic, QoS::AtMostOnce).unwrap();
+    async fn subscribe_mqtt_async(client: &mut rumqttc::AsyncClient, mqtt_topic: &String) {
+        client.subscribe(mqtt_topic, QoS::AtMostOnce).await.unwrap();
     }
 }

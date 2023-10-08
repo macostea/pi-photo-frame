@@ -18,7 +18,7 @@ mod application;
 use application::PpfApplication;
 
 fn load_config() -> Config {
-    let mut path = Path::new("config.json5");
+    let mut path = Path::new(".config.json5");
     if !path.exists() {
         path = Path::new("/etc/pi-photo-frame.json5");
     }
