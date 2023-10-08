@@ -2,11 +2,21 @@ use std::{
     fs::{self, ReadDir},
     io,
     path::PathBuf,
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
 };
 
 use exif::{DateTime, In, Tag, Value};
+use gtk::{
+    gdk_pixbuf::{Pixbuf, PixbufRotation},
+    glib::Sender,
+};
 use rand::prelude::*;
-use tracing::{debug, instrument};
+use serde::Deserialize;
+use tracing::{debug, instrument, span, warn, Level};
+
+use crate::{geocoder::Geocoder, utils::unsafe_wrapper::UnsafeSendSync};
 
 #[derive(Clone, Debug)]
 pub enum Media {
@@ -21,18 +31,44 @@ pub enum Media {
     },
 }
 
+pub enum MediaMessage {
+    Photo {
+        photo: Media,
+        photo_data: PhotoData,
+        address: Result<String, String>,
+    },
+    Video {
+        video: Media,
+    },
+}
+
+pub struct PhotoData {
+    pub pixbuf: Arc<UnsafeSendSync<Pixbuf>>,
+}
+
+#[derive(Deserialize, Default, Debug, Clone)]
+pub struct Config {
+    pub paths: Vec<String>,
+    pub transition_time: u32,
+    pub mqtt: bool,
+    pub mqtt_host: String,
+    pub mqtt_topic: String,
+    pub reverse_geocode: bool,
+    pub mapbox_api_key: String,
+}
+
 #[derive(Default, Debug)]
 pub struct MediaProvider {
-    paths: Vec<String>,
+    config: Config,
     photo_valid_extensions: Vec<String>,
     video_valid_extensions: Vec<String>,
     pub paused: bool,
 }
 
 impl MediaProvider {
-    pub fn new(paths: Vec<String>) -> Self {
+    pub fn new(config: Config) -> Self {
         MediaProvider {
-            paths,
+            config,
             photo_valid_extensions: vec!["jpg".to_string(), "jpeg".to_string(), "png".to_string()],
             video_valid_extensions: vec![
                 // "mov".to_string(),
@@ -43,19 +79,101 @@ impl MediaProvider {
     }
 
     #[instrument]
+    pub fn start_worker(this: Arc<Mutex<MediaProvider>>, media_sender: Sender<MediaMessage>) {
+        let config_clone = this.clone().lock().unwrap().config.clone();
+        thread::spawn(move || {
+            let geocoder = Geocoder::new(config_clone.mapbox_api_key);
+
+            loop {
+                let span = span!(Level::TRACE, "get_photo_thread");
+                let _enter = span.enter();
+
+                thread::sleep(Duration::from_secs(config_clone.transition_time.into()));
+                let media = this.clone().lock().unwrap().get_media();
+                debug!("Got media");
+                match media {
+                    Ok(Some(Media::Photo {
+                        ref path,
+                        orientation,
+                        location,
+                        date: _,
+                    })) => {
+                        let image_data = Pixbuf::from_file(path);
+                        if let Err(err) = image_data {
+                            warn!("Loading image failed {:?}", err);
+                            return;
+                        }
+
+                        let pixbuf = Arc::new(UnsafeSendSync::new(image_data.unwrap()));
+
+                        if pixbuf.height() <= 0 || pixbuf.width() <= 0 {
+                            warn!("Corrupted image {:?}", path);
+                            return;
+                        }
+
+                        let new_pixbuf = MediaProvider::rotate_photo(pixbuf, orientation);
+
+                        let mut address_message = Err("Not set".into());
+                        if config_clone.reverse_geocode {
+                            if let Some(location) = location {
+                                debug!("Geolocating");
+                                let address = geocoder.reverse_geocode(location.0, location.1);
+                                address_message = address;
+                                debug!("Finished geolocating");
+                            }
+                        }
+
+                        let photo_obj = MediaMessage::Photo {
+                            photo: media.unwrap().unwrap().clone(),
+                            photo_data: PhotoData {
+                                pixbuf: new_pixbuf.clone(),
+                            },
+                            address: address_message,
+                        };
+
+                        debug!("Sending photo to UI");
+                        let res = media_sender.send(photo_obj);
+                        if let Err(e) = res {
+                            println!("Failed to send photo_obj between threads {}", e);
+                        }
+                    }
+
+                    Ok(Some(Media::Video { path: _ })) => {
+                        let video_obj = MediaMessage::Video {
+                            video: media.unwrap().unwrap().clone(),
+                        };
+
+                        let res = media_sender.send(video_obj);
+                        if let Err(e) = res {
+                            println!("Failed to send video_obj between threads {}", e);
+                        }
+                    }
+                    Ok(None) => {
+                        // Everything went ok but there was no media
+                        // Most likely paused, don't do anything.
+                    }
+                    _ => {
+                        println!("Error getting photo, {}", media.unwrap_err());
+                    }
+                }
+            }
+        });
+    }
+
+    #[instrument]
     pub fn get_media(&self) -> Result<Option<Media>, io::Error> {
         if self.paused {
             return Ok(None);
         }
 
         let mut rng = rand::thread_rng();
-        let index = rng.gen_range(0..self.paths.len());
+        let index = rng.gen_range(0..self.config.paths.len());
 
         let exifreader = exif::Reader::new();
 
         for t in 0..5 {
             debug!(current_try = t, "Trying to get a valid photo");
-            let dir = fs::read_dir(self.paths[index].clone())?;
+            let dir = fs::read_dir(self.config.paths[index].clone())?;
             let all_extensions = self
                 .photo_valid_extensions
                 .iter()
@@ -73,8 +191,8 @@ impl MediaProvider {
                 .contains(&extension.to_lowercase())
             {
                 debug!("Found a valid photo");
-                let file = fs::File::open(random_media_path)?;
-                let mut bufreader = std::io::BufReader::new(&file);
+                let file = std::fs::File::open(random_media_path)?;
+                let mut bufreader = std::io::BufReader::new(file);
                 let exif = exifreader
                     .read_from_container(&mut bufreader)
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
@@ -202,5 +320,33 @@ impl MediaProvider {
             io::ErrorKind::NotFound,
             "No valid photo found",
         ))
+    }
+
+    fn rotate_photo(
+        pixbuf: Arc<UnsafeSendSync<Pixbuf>>,
+        orientation: u32,
+    ) -> Arc<UnsafeSendSync<Pixbuf>> {
+        // We might need to rotate the image
+        debug!("Got pixels");
+        let new_pixbuf = match orientation {
+            1 => None,
+            2 => pixbuf.flip(true),
+            3 => pixbuf.rotate_simple(PixbufRotation::Upsidedown),
+            4 => pixbuf
+                .flip(true)
+                .map_or(None, |p| p.rotate_simple(PixbufRotation::Upsidedown)),
+            5 => pixbuf
+                .flip(true)
+                .map_or(None, |p| p.rotate_simple(PixbufRotation::Clockwise)),
+            6 => pixbuf.rotate_simple(PixbufRotation::Clockwise),
+            7 => pixbuf
+                .flip(true)
+                .map_or(None, |p| p.rotate_simple(PixbufRotation::Counterclockwise)),
+            8 => pixbuf.rotate_simple(PixbufRotation::Counterclockwise),
+            _ => None,
+        };
+        debug!("Flipped pixels");
+
+        new_pixbuf.map_or(pixbuf, |p| Arc::new(UnsafeSendSync::new(p)))
     }
 }

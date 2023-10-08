@@ -1,1 +1,1 @@
-pub mod main_view;
+pub mod play_pause_button;
