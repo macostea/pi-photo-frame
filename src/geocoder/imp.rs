@@ -9,6 +9,8 @@ struct MapboxResponse {
 struct MapboxFeatures {
     place_name: String,
 }
+
+#[derive(Default, Debug)]
 pub struct Geocoder {
     mapbox_reverse_geocoder_url: String,
 }

@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="PpfWindow" parent="GtkWindow">
+    <property name="fullscreened">true</property>
+    <child>
+      <object class="GtkOverlay" id="overlay">
+        <child>
+          <object class="GtkPicture" id="picture">
+            <property name="halign">fill</property>
+            <property name="valign">fill</property>
+          </object>
+        </child>
+        <child type="overlay">
+          <object class="GtkBox" id="time_box">
+            <property name="halign">end</property>
+            <property name="valign">start</property>
+            <property name="orientation">vertical</property>
+            <style>
+              <class name="date-time-container" />
+            </style>
+            <child>
+              <object class="GtkLabel" id="date_label">
+                <property name="halign">end</property>
+                <property name="valign">center</property>
+                <property name="label">Friday, April 1, 2022</property>
+                <style>
+                  <class name="date-label" />
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel" id="time_label">
+                <property name="halign">end</property>
+                <property name="valign">center</property>
+                <property name="label">20:37</property>
+                <style>
+                  <class name="time-label" />
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child type="overlay">
+          <object class="GtkBox" id="location_box">
+            <property name="halign">end</property>
+            <property name="valign">end</property>
+            <property name="orientation">vertical</property>
+            <style>
+              <class name="location-container" />
+            </style>
+            <child>
+              <object class="GtkLabel" id="location_label">
+                <property name="halign">end</property>
+                <property name="label">New York, NY</property>
+                <style>
+                  <class name="location-label" />
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel" id="photo_date_label">
+                <property name="halign">end</property>
+                <property name="label">123</property>
+                <style>
+                  <class name="photo-date-label" />
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child type="overlay">
+          <object class="GtkBox" id="play_pause_box">
+            <property name="halign">start</property>
+            <property name="valign">start</property>
+            <property name="orientation">vertical</property>
+            <style>
+              <class name="paused-container" />
+            </style>
+            <child>
+              <object class="PpfPlayPauseButton" id="play_pause_button">
+                <property name="halign">start</property>
+                <property name="valign">center</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel" id="photo_location_label">
+                <property name="halign">start</property>
+                <property name="label">photo location</property>
+                <property name="visible">false</property>
+                <style>
+                  <class name="photo-location-label" />
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

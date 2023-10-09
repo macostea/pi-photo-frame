@@ -1,3 +1,3 @@
-pub mod imp;
-pub use imp::Media;
-pub use imp::MediaProvider;
+pub mod provider;
+pub use provider::Media;
+pub use provider::MediaProvider;
