@@ -291,9 +291,9 @@ impl PpfWindow {
     }
 
     fn connect_mqtt_async(mqtt_host: String) -> (rumqttc::AsyncClient, rumqttc::EventLoop) {
-        let mut mqtt_options = MqttOptions::new("pi-photo-frame-2", mqtt_host, 1883);
+        let mut mqtt_options = MqttOptions::new("pi-photo-frame", mqtt_host, 1883);
         mqtt_options.set_keep_alive(Duration::from_secs(5));
-        // mqtt_options.set_clean_session(false);
+        mqtt_options.set_clean_session(false);
 
         let (client, eventloop) = rumqttc::AsyncClient::new(mqtt_options, 10);
 
