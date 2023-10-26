@@ -1,7 +1,7 @@
 use std::{
     fs::{self, ReadDir},
-    io,
-    path::PathBuf,
+    io::{self, Error},
+    path::{PathBuf, Path},
     sync::{Arc, Mutex},
     thread,
     time::Duration,
@@ -13,7 +13,7 @@ use gtk::{
     glib::Sender,
 };
 use rand::prelude::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument, span, warn, Level};
 
 use crate::{geocoder::Geocoder, utils::unsafe_wrapper::UnsafeSendSync};
@@ -46,6 +46,34 @@ pub struct PhotoData {
     pub pixbuf: Arc<UnsafeSendSync<Pixbuf>>,
 }
 
+pub fn load_config() -> Config {
+    let mut path = Path::new(".config.json5");
+    if !path.exists() {
+        path = Path::new("/etc/pi-photo-frame.json5");
+    }
+    json5::from_str(&fs::read_to_string(path).unwrap()).unwrap()
+}
+
+pub fn load_failed_files() -> FailedFiles {
+    let mut path = Path::new(".failed-files.json5");
+    if !path.exists() {
+        path = Path::new("/var/lib/pi-photo-frame/failed-files.json5");
+    }
+    json5::from_str(&fs::read_to_string(path).unwrap()).unwrap()
+}
+
+pub fn write_failed_files(failed_files: FailedFiles) -> Result<(), Error> {
+    let mut path = Path::new(".failed-files.json5");
+    if !path.exists() {
+        path = Path::new("/var/lib/pi-photo-frame/failed-files.json5");
+    }
+
+    fs::write(
+        path,
+        json5::to_string(&failed_files).unwrap(),
+    )
+}
+
 #[derive(Deserialize, Default, Debug, Clone)]
 pub struct Config {
     pub paths: Vec<String>,
@@ -57,18 +85,26 @@ pub struct Config {
     pub mapbox_api_key: String,
 }
 
+#[derive(Deserialize, Serialize, Default, Debug, Clone)]
+pub struct FailedFiles {
+    pub failed: Vec<String>,
+    pub current: String,
+}
+
 #[derive(Default, Debug)]
 pub struct MediaProvider {
     config: Config,
+    failed_files: FailedFiles,
     photo_valid_extensions: Vec<String>,
     video_valid_extensions: Vec<String>,
     pub paused: bool,
 }
 
 impl MediaProvider {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, failed_files: FailedFiles) -> Self {
         MediaProvider {
             config,
+            failed_files,
             photo_valid_extensions: vec!["jpg".to_string(), "jpeg".to_string(), "png".to_string()],
             video_valid_extensions: vec![
                 // "mov".to_string(),
@@ -80,9 +116,31 @@ impl MediaProvider {
 
     #[instrument]
     pub fn start_worker(this: Arc<Mutex<MediaProvider>>, media_sender: Sender<MediaMessage>) {
+        debug!("Starting worker thread");
         let config_clone = this.clone().lock().unwrap().config.clone();
         thread::spawn(move || {
+            debug!("Started worker thread");
             let geocoder = Geocoder::new(config_clone.mapbox_api_key);
+
+            let this_clone = this.clone();
+
+            let mut lock = this_clone.lock().unwrap();
+            let current_failed_file = lock.failed_files.current.clone();
+
+            debug!("Checking for failed file");
+            if !current_failed_file.is_empty() {
+                warn!("Found failed file, saving it to list");
+                lock.failed_files.failed.push(current_failed_file);
+                lock.failed_files.current = "".to_string();
+
+                let res = write_failed_files(lock.failed_files.clone());
+                if let Err(e) = res {
+                    warn!("Failed to write failed_files {}", e);
+                }
+            }
+
+            drop(lock);
+            drop(this_clone);
 
             loop {
                 let span = span!(Level::TRACE, "get_photo_thread");
@@ -123,6 +181,15 @@ impl MediaProvider {
                             }
                         }
 
+                        debug!("Saving photo path");
+                        let mut failed_files = this.clone().lock().unwrap().failed_files.clone();
+                        failed_files.current = path.to_str().unwrap().to_string();
+
+                        let res = write_failed_files(failed_files);
+                        if let Err(e) = res {
+                            warn!("Failed to write failed_files {}", e);
+                        }
+
                         let photo_obj = MediaMessage::Photo {
                             photo: media.unwrap().unwrap().clone(),
                             photo_data: PhotoData {
@@ -130,6 +197,7 @@ impl MediaProvider {
                             },
                             address: address_message,
                         };
+
 
                         debug!("Sending photo to UI");
                         let res = media_sender.send(photo_obj);
@@ -188,7 +256,11 @@ impl MediaProvider {
 
             if self
                 .photo_valid_extensions
-                .contains(&extension.to_lowercase())
+                .contains(&extension.to_lowercase()) &&
+                !self
+                .failed_files
+                .failed
+                .iter().any(|f| f == random_media_path.to_str().unwrap())
             {
                 debug!("Found a valid photo");
                 let file = std::fs::File::open(random_media_path)?;
@@ -287,6 +359,15 @@ impl MediaProvider {
             io::ErrorKind::NotFound,
             "No valid photo found",
         ));
+    }
+
+    pub fn remove_current_failed_photo(&mut self) {
+        self.failed_files.current = "".to_string();
+
+        let res = write_failed_files(self.failed_files.clone());
+        if let Err(e) = res {
+            warn!("Failed to write failed_files {}", e);
+        }
     }
 
     #[instrument]

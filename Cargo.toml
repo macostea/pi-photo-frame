@@ -16,8 +16,9 @@ maintainer-scripts = "debian/"
 assets = [
     ["config.json5", "/etc/pi-photo-frame.json5", "644"],
     ["target/release/photo-frame", "/usr/bin/photo-frame", "755"],
-    ["data/resources/pause-icon.svg", "/usr/local/lib/pi-photo-frame/resources/pause-icon.svg", "755"],
-    ["data/resources/play-icon.svg", "/usr/local/lib/pi-photo-frame/resources/play-icon.svg", "755"],
+    ["data/resources/pause-icon.svg", "/usr/local/lib/pi-photo-frame/resources/pause-icon.svg", "644"],
+    ["data/resources/play-icon.svg", "/usr/local/lib/pi-photo-frame/resources/play-icon.svg", "644"],
+    ["data/failed-files.json5", "/var/lib/pi-photo-frame/failed-files.json5", "644"],
 ]
 conf-files = [
     "/etc/pi-photo-frame.json5"
