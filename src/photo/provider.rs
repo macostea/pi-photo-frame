@@ -229,10 +229,13 @@ impl MediaProvider {
     }
 
     #[instrument]
-    pub fn get_media(&self) -> Result<Option<Media>, io::Error> {
+    pub fn get_media(&mut self) -> Result<Option<Media>, io::Error> {
         if self.paused {
             return Ok(None);
         }
+
+        debug!("Remove current photo from failed");
+        self.remove_current_failed_photo();
 
         let mut rng = rand::thread_rng();
         let index = rng.gen_range(0..self.config.paths.len());

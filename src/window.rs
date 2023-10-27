@@ -196,10 +196,6 @@ impl PpfWindow {
                     this.imp().location_box.hide();
                 }
                 debug!("Done setting everything on screen");
-
-                debug!("Remove current photo from failed");
-                let media_provider = this.imp().media_provider.borrow();
-                media_provider.lock().unwrap().remove_current_failed_photo();
             },
             MediaMessage::Video { video: video_file } => {
               if let Media::Video { path } = video_file {
