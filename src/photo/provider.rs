@@ -258,12 +258,17 @@ impl MediaProvider {
             let extension = random_media_path.extension().unwrap().to_str().unwrap();
 
             if self
-                .photo_valid_extensions
-                .contains(&extension.to_lowercase()) &&
-                !self
                 .failed_files
                 .failed
                 .iter().any(|f| f == random_media_path.to_str().unwrap())
+            {
+                debug!("Found a failed file, try again");
+                continue;
+            }
+
+            if self
+                .photo_valid_extensions
+                .contains(&extension.to_lowercase())
             {
                 debug!("Found a valid photo");
                 let file = std::fs::File::open(random_media_path)?;
