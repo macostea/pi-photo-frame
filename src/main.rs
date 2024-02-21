@@ -34,6 +34,11 @@ static GRESOURCE_BYTES: &[u8] =
 fn main() -> glib::ExitCode {
     let config = load_config();
 
+    let _guard = sentry::init(("SENTRY_DSN", sentry::ClientOptions {
+        release: sentry::release_name!(),
+        ..Default::default()
+    }));
+
     gio::resources_register(
         &gio::Resource::from_data(&glib::Bytes::from_static(GRESOURCE_BYTES)).unwrap(),
     );
