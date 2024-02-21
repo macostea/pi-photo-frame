@@ -1,5 +1,5 @@
 use crate::gui::play_pause_button::PpfPlayPauseButton;
-use crate::photo::provider::{Config, MediaMessage};
+use crate::photo::provider::{Config, MediaMessage, FailedFiles};
 use crate::photo::{Media, MediaProvider};
 use crate::{spawn, spawn_tokio};
 use gtk::glib::{MainContext, PRIORITY_DEFAULT};
@@ -90,7 +90,7 @@ glib::wrapper! {
 
 #[gtk::template_callbacks]
 impl PpfWindow {
-    pub fn new<A: IsA<gtk::Application>>(app: &A, config: Config) -> Self {
+    pub fn new<A: IsA<gtk::Application>>(app: &A, config: Config, failed_files: FailedFiles) -> Self {
         let obj: PpfWindow = glib::Object::builder()
             .property("application", app)
             .property("fullscreened", true)
@@ -99,7 +99,7 @@ impl PpfWindow {
         let imp = imp::PpfWindow::from_obj(&obj);
         imp.config.replace(config.clone());
 
-        let media_provider = Arc::new(Mutex::new(MediaProvider::new(config.clone())));
+        let media_provider = Arc::new(Mutex::new(MediaProvider::new(config.clone(), failed_files.clone())));
         imp.media_provider.replace(media_provider);
 
         obj.start_worker_thread();
@@ -146,6 +146,7 @@ impl PpfWindow {
     }
 
     pub fn start_worker_thread(&self) {
+        debug!("Starting worker thread");
         let media_provider = self.imp().media_provider.clone();
         let (media_sender, media_receiver) = MainContext::channel::<MediaMessage>(PRIORITY_DEFAULT);
         MediaProvider::start_worker(media_provider.borrow().clone(), media_sender);
@@ -155,46 +156,46 @@ impl PpfWindow {
         media_receiver.attach(None, clone!(@weak this => @default-return Continue(false), move |photo_obj| {
           match photo_obj {
             MediaMessage::Photo { photo, photo_data, address } => {
-              let span = span!(Level::TRACE, "show_picture_thread");
-              let _enter = span.enter();
+                let span = span!(Level::TRACE, "show_picture_thread");
+                let _enter = span.enter();
 
-              debug!("Recreating photo");
+                debug!("Recreating photo");
 
-              this.imp().picture.set_pixbuf(Some(photo_data.pixbuf.as_ref()));
+                this.imp().picture.set_pixbuf(Some(photo_data.pixbuf.as_ref()));
 
-              debug!("Done setting photo on screen");
+                debug!("Done setting photo on screen");
 
-              let mut location_found = false;
-              let mut date_found = false;
+                let mut location_found = false;
+                let mut date_found = false;
 
-              match address {
-                  Ok(a) => {
-                      location_found = true;
-                      this.imp().location_label.set_text(format!("{}", a).as_str());
-                  },
-                  Err(e) => {
-                      this.imp().location_label.set_text("");
-                      println!("Failed to get reverse geocode response, {}", e);
-                  }
-              }
+                match address {
+                    Ok(a) => {
+                        location_found = true;
+                        this.imp().location_label.set_text(format!("{}", a).as_str());
+                    },
+                    Err(e) => {
+                        this.imp().location_label.set_text("");
+                        println!("Failed to get reverse geocode response, {}", e);
+                    }
+                }
 
-              if let Media::Photo { path, orientation: _, location: _, date } = photo {
-                  if let Some(string_date) = date {
-                      date_found = true;
-                      this.imp().photo_date_label.set_text(string_date.as_str());
-                  } else {
-                      this.imp().photo_date_label.set_text("");
-                  }
+                if let Media::Photo { path, orientation: _, location: _, date } = photo {
+                    if let Some(string_date) = date {
+                        date_found = true;
+                        this.imp().photo_date_label.set_text(string_date.as_str());
+                    } else {
+                        this.imp().photo_date_label.set_text("");
+                    }
 
-                  this.imp().photo_location_label.set_text(format!("{}", path.to_str().unwrap()).as_str());
-              }
+                    this.imp().photo_location_label.set_text(format!("{}", path.to_str().unwrap()).as_str());
+                }
 
-              if location_found || date_found {
-                  this.imp().location_box.show();
-              } else {
-                  this.imp().location_box.hide();
-              }
-              debug!("Done setting everything on screen");
+                if location_found || date_found {
+                    this.imp().location_box.show();
+                } else {
+                    this.imp().location_box.hide();
+                }
+                debug!("Done setting everything on screen");
             },
             MediaMessage::Video { video: video_file } => {
               if let Media::Video { path } = video_file {

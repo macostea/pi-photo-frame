@@ -13,3 +13,4 @@ Cargo.lock
 
 builder/rootfs/
 .config.json5
+.failed-files.json5

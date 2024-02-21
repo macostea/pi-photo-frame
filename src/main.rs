@@ -1,9 +1,9 @@
-use std::{fs, io, path::Path};
+use std::io;
 
 use gtk::gio::{self, prelude::*};
 use gtk::glib;
 use once_cell::sync::Lazy;
-use photo::provider::Config;
+use photo::provider::{load_config, load_failed_files};
 use tracing::Level;
 
 mod config;
@@ -17,14 +17,6 @@ mod application;
 
 use application::PpfApplication;
 
-fn load_config() -> Config {
-    let mut path = Path::new(".config.json5");
-    if !path.exists() {
-        path = Path::new("/etc/pi-photo-frame.json5");
-    }
-    json5::from_str(&fs::read_to_string(path).unwrap()).unwrap()
-}
-
 pub static RUNTIME: Lazy<tokio::runtime::Runtime> =
     Lazy::new(|| tokio::runtime::Runtime::new().unwrap());
 
@@ -33,6 +25,7 @@ static GRESOURCE_BYTES: &[u8] =
 
 fn main() -> glib::ExitCode {
     let config = load_config();
+    let failed_files = load_failed_files();
 
     let _guard = sentry::init(("SENTRY_DSN", sentry::ClientOptions {
         release: sentry::release_name!(),
@@ -48,5 +41,5 @@ fn main() -> glib::ExitCode {
         .with_writer(io::stdout)
         .init();
 
-    PpfApplication::new(config).run()
+    PpfApplication::new(config, failed_files).run()
 }
