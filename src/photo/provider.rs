@@ -159,14 +159,14 @@ impl MediaProvider {
                         let image_data = Pixbuf::from_file(path);
                         if let Err(err) = image_data {
                             warn!("Loading image failed {:?}", err);
-                            return;
+                            continue;
                         }
 
                         let pixbuf = Arc::new(UnsafeSendSync::new(image_data.unwrap()));
 
                         if pixbuf.height() <= 0 || pixbuf.width() <= 0 {
                             warn!("Corrupted image {:?}", path);
-                            return;
+                            continue;
                         }
 
                         let new_pixbuf = MediaProvider::rotate_photo(pixbuf, orientation);
