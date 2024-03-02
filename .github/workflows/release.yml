@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Run the build
-        run: docker run --rm -v `pwd`:/builder mcostea/pi-photo-frame-builder
+        run: docker run --rm -v `pwd`:/builder mcostea/pi-photo-frame-builder:v2
 
       - name: Create package
         run: tar -czvf pi-photo-builder.tar.gz target/aarch64-unknown-linux-gnu/debian/*
