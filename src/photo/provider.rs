@@ -114,7 +114,7 @@ impl MediaProvider {
         }
     }
 
-    #[instrument]
+    #[instrument(skip(this, media_sender))]
     pub fn start_worker(this: Arc<Mutex<MediaProvider>>, media_sender: Sender<MediaMessage>) {
         debug!("Starting worker thread");
         let config_clone = this.clone().lock().unwrap().config.clone();
@@ -228,7 +228,7 @@ impl MediaProvider {
         });
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub fn get_media(&mut self) -> Result<Option<Media>, io::Error> {
         if self.paused {
             return Ok(None);
@@ -378,7 +378,7 @@ impl MediaProvider {
         }
     }
 
-    #[instrument]
+    #[instrument(skip(dir, valid_extensions))]
     fn get_random_entry(dir: ReadDir, valid_extensions: Vec<String>) -> Result<PathBuf, io::Error> {
         let mut rng = rand::thread_rng();
 
