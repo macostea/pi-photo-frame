@@ -298,7 +298,7 @@ impl PpfWindow {
 
         let (client, eventloop) = rumqttc::AsyncClient::new(mqtt_options, 10);
 
-        return (client, eventloop)
+        (client, eventloop)
     }
 
     async fn subscribe_mqtt_async(client: &mut rumqttc::AsyncClient, mqtt_topic: &String) {
