@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/com/mcostea/PiPhotoFrame/">
+    <!-- see https://gtk-rs.org/gtk4-rs/git/docs/gtk4/struct.Application.html#automatic-resources -->
+    <file compressed="true" preprocess="xml-stripblanks" alias="gtk/play_pause_button.ui">../gtk/play_pause_button.ui</file>
+    <file compressed="true" preprocess="xml-stripblanks">../gtk/window.ui</file>
+    <file compressed="true">style.css</file>
+    <file compressed="true">pause-icon.svg</file>
+    <file compressed="true">play-icon.svg</file>
+  </gresource>
+</gresources>
