@@ -243,6 +243,8 @@ impl PpfWindow {
             let (sender, receiver) = MainContext::channel::<bool>(PRIORITY_DEFAULT);
             let (mut client, mut eventloop) = PpfWindow::connect_mqtt_async(mqtt_host.clone());
 
+            let mut mqtt_client_clone = client.clone();
+
             spawn_tokio!(async move {
                 PpfWindow::subscribe_mqtt_async(&mut client, &mqtt_topic).await;
             });
@@ -274,6 +276,11 @@ impl PpfWindow {
                         }
                         _ => {}
                     }
+                }
+
+                if let Err(e) = eventloop.poll().await {
+                    println!("Error in eventloop: {}", e);
+                    PpfWindow::subscribe_mqtt_async(&mut mqtt_client_clone, &mqtt_topic_clone).await;
                 }
             });
 
