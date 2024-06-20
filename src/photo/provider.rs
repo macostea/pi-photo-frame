@@ -107,8 +107,8 @@ impl MediaProvider {
             failed_files,
             photo_valid_extensions: vec!["jpg".to_string(), "jpeg".to_string(), "png".to_string()],
             video_valid_extensions: vec![
-                // "mov".to_string(),
-                // "mp4".to_string(),
+                "mov".to_string(),
+                "mp4".to_string(),
             ],
             paused: false,
         }
