@@ -6,6 +6,8 @@
   mqtt: true,
   mqtt_topic: "",
   mqtt_host: "",
+  mqtt_user: "",
+  mqtt_password: "",
 
   reverse_geocode: true,
   mapbox_api_key: "",

@@ -81,6 +81,8 @@ pub struct Config {
     pub mqtt: bool,
     pub mqtt_host: String,
     pub mqtt_topic: String,
+    pub mqtt_user: Option<String>,
+    pub mqtt_password: Option<String>,
     pub reverse_geocode: bool,
     pub mapbox_api_key: String,
 }

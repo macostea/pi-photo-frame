@@ -237,11 +237,13 @@ impl PpfWindow {
 
         let config = self.imp().config.borrow();
         let mqtt_host = config.mqtt_host.clone();
+        let mqtt_user = config.mqtt_user.clone();
+        let mqtt_password = config.mqtt_password.clone();
         let mqtt_topic = config.mqtt_topic.clone();
         let mqtt_topic_clone = mqtt_topic.clone();
         if config.mqtt {
             let (sender, receiver) = MainContext::channel::<bool>(PRIORITY_DEFAULT);
-            let (mut client, mut eventloop) = PpfWindow::connect_mqtt_async(mqtt_host.clone());
+            let (mut client, mut eventloop) = PpfWindow::connect_mqtt_async(mqtt_host.clone(), mqtt_user, mqtt_password);
 
             let mut mqtt_client_clone = client.clone();
 
@@ -298,10 +300,13 @@ impl PpfWindow {
         }
     }
 
-    fn connect_mqtt_async(mqtt_host: String) -> (rumqttc::AsyncClient, rumqttc::EventLoop) {
+    fn connect_mqtt_async(mqtt_host: String, mqtt_user: Option<String>, mqtt_password: Option<String>) -> (rumqttc::AsyncClient, rumqttc::EventLoop) {
         let mut mqtt_options = MqttOptions::new("pi-photo-frame", mqtt_host, 1883);
         mqtt_options.set_keep_alive(Duration::from_secs(5));
         mqtt_options.set_clean_session(false);
+        if let (Some(username), Some(password)) = (mqtt_user, mqtt_password) {
+            mqtt_options.set_credentials(username, password);
+        }
 
         let (client, eventloop) = rumqttc::AsyncClient::new(mqtt_options, 10);
 
