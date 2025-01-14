@@ -1,7 +1,7 @@
 use std::{
     fs::{self, ReadDir},
     io::{self, Error},
-    path::{PathBuf, Path},
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread,
     time::Duration,
@@ -68,10 +68,7 @@ pub fn write_failed_files(failed_files: FailedFiles) -> Result<(), Error> {
         path = Path::new("/var/lib/pi-photo-frame/failed-files.json5");
     }
 
-    fs::write(
-        path,
-        json5::to_string(&failed_files).unwrap(),
-    )
+    fs::write(path, json5::to_string(&failed_files).unwrap())
 }
 
 #[derive(Deserialize, Default, Debug, Clone)]
@@ -200,7 +197,6 @@ impl MediaProvider {
                             address: address_message,
                         };
 
-
                         debug!("Sending photo to UI");
                         let res = media_sender.send(photo_obj);
                         if let Err(e) = res {
@@ -262,7 +258,8 @@ impl MediaProvider {
             if self
                 .failed_files
                 .failed
-                .iter().any(|f| f == random_media_path.to_str().unwrap())
+                .iter()
+                .any(|f| f == random_media_path.to_str().unwrap())
             {
                 debug!("Found a failed file, try again");
                 continue;

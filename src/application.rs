@@ -1,4 +1,8 @@
-use crate::{config, photo::provider::{Config, FailedFiles}, window::PpfWindow};
+use crate::{
+    config,
+    photo::provider::{Config, FailedFiles},
+    window::PpfWindow,
+};
 use gtk::gdk::Display;
 use gtk::CssProvider;
 use gtk::STYLE_PROVIDER_PRIORITY_APPLICATION;
@@ -25,7 +29,11 @@ mod imp {
     impl ApplicationImpl for PpfApplication {
         fn activate(&self) {
             let application = self.obj();
-            let window = PpfWindow::new(&*application, self.config.borrow().clone(), self.failed_files.borrow().clone());
+            let window = PpfWindow::new(
+                &*application,
+                self.config.borrow().clone(),
+                self.failed_files.borrow().clone(),
+            );
             window.present();
         }
 
